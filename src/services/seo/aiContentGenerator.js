@@ -48,10 +48,20 @@ async function callClaudeAPI(prompt, model = 'haiku') {
 
 /**
  * Parse JSON from AI response, handling common issues
- * @param {string} content - Raw AI response
+ * @param {string|Object} content - Raw AI response
  * @returns {Object} Parsed JSON
  */
 function parseAIResponse(content) {
+    // If content is already an object, return it
+    if (typeof content === 'object' && content !== null) {
+        return content;
+    }
+
+    // Ensure content is a string
+    if (typeof content !== 'string') {
+        throw new Error(`Expected string content, got ${typeof content}`);
+    }
+
     // Try to extract JSON from the response
     let jsonStr = content;
 
@@ -70,7 +80,7 @@ function parseAIResponse(content) {
     try {
         return JSON.parse(jsonStr);
     } catch (error) {
-        throw new Error(`Failed to parse AI response as JSON: ${error.message}`);
+        throw new Error(`Failed to parse AI response as JSON: ${error.message}. Content: ${jsonStr.substring(0, 200)}`);
     }
 }
 
