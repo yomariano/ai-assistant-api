@@ -4,6 +4,71 @@
  */
 
 /**
+ * Get use case description based on industry metadata
+ * @param {Object} metadata - Industry metadata
+ * @returns {string} Use case description
+ */
+function getUseCaseDescription(metadata = {}) {
+    const useCaseMap = {
+        'appointment-scheduling': 'scheduling appointments and managing bookings',
+        'service-booking': 'booking services and scheduling visits',
+        'quote-requests': 'handling quote requests and providing estimates',
+        'consultation-booking': 'booking consultations and managing client inquiries',
+        'emergency-dispatch': 'handling emergency calls and dispatching services',
+        'reservation-booking': 'managing reservations and bookings',
+        'order-taking': 'taking orders and processing requests',
+        'sales-inquiries': 'handling sales inquiries and lead qualification',
+        'product-inquiries': 'answering product questions and providing information',
+        'support-tickets': 'managing support requests and troubleshooting',
+        'membership-inquiries': 'handling membership questions and sign-ups',
+        'class-booking': 'booking classes and managing schedules',
+        'lesson-booking': 'scheduling lessons and sessions',
+        'session-booking': 'booking sessions and appointments',
+        'enrollment-inquiries': 'handling enrollment questions and registrations',
+        'tenant-inquiries': 'managing tenant inquiries and property questions',
+        'candidate-screening': 'screening candidates and scheduling interviews',
+        'property-inquiries': 'handling property inquiries and viewings',
+        'tracking-inquiries': 'providing tracking updates and delivery information',
+        'pickup-scheduling': 'scheduling pickups and managing logistics',
+        'rental-inquiries': 'handling rental inquiries and bookings',
+        'ticket-inquiries': 'answering ticket questions and reservations',
+        'tee-time-booking': 'booking tee times and managing reservations',
+        'prescription-inquiries': 'handling prescription inquiries and refills',
+        'arrangement-inquiries': 'managing arrangement inquiries with compassion',
+        'service-inquiries': 'handling service inquiries and questions'
+    };
+
+    return useCaseMap[metadata.use_case] || 'handling phone calls and customer inquiries';
+}
+
+/**
+ * Get industry type description
+ * @param {Object} metadata - Industry metadata
+ * @returns {string} Industry type description
+ */
+function getIndustryTypeDescription(metadata = {}) {
+    const typeMap = {
+        'food-service': 'restaurants, cafes, and food businesses',
+        'healthcare': 'healthcare providers and medical practices',
+        'professional-services': 'professional service firms',
+        'home-services': 'home service providers and contractors',
+        'automotive': 'automotive businesses and service providers',
+        'beauty-wellness': 'beauty and wellness businesses',
+        'education': 'educational institutions and training providers',
+        'travel-hospitality': 'travel and hospitality businesses',
+        'retail': 'retail stores and shops',
+        'pet-services': 'pet service providers',
+        'logistics': 'logistics and moving companies',
+        'entertainment': 'entertainment and event businesses',
+        'tech': 'technology and IT service providers',
+        'funeral': 'funeral service providers',
+        'security': 'security service companies'
+    };
+
+    return typeMap[metadata.type] || 'businesses';
+}
+
+/**
  * Generate prompt for location page
  * @param {string} cityName - City/town name
  * @param {Object} metadata - Location metadata
@@ -13,57 +78,60 @@ function getLocationPrompt(cityName, metadata = {}) {
     const population = metadata.population ? `Population: approximately ${metadata.population.toLocaleString()}` : '';
     const county = metadata.county ? `County: ${metadata.county}` : '';
 
-    return `You are a content writer for OrderBot, an AI phone answering service for Irish restaurants, cafes, and takeaways.
+    return `You are a content writer for VoiceFleet, an AI voice agent service that handles phone calls for businesses across all industries in Ireland and Europe.
 
 Generate SEO-optimized content for a location page targeting "${cityName}", Ireland.
 
 Context:
-- OrderBot answers phone calls for restaurants 24/7 using AI
-- Target audience: Restaurant, cafe, and takeaway owners in ${cityName}
+- VoiceFleet provides AI voice agents that answer phone calls 24/7
+- Works for ANY industry: healthcare, professional services, home services, automotive, beauty, retail, and more
+- Target audience: Business owners of all types in ${cityName}
 - Tone: Professional, helpful, locally relevant
-- Brand: OrderBot - "Never Miss an Order Again"
+- Brand: VoiceFleet - "AI Voice Agents at 80% Lower Cost"
 ${population ? `- ${population}` : ''}
 ${county ? `- ${county}` : ''}
 
 Generate the following JSON structure (respond ONLY with valid JSON, no other text):
 
 {
-  "headline": "AI Phone Answering for ${cityName} Restaurants",
-  "subheadline": "A compelling value proposition specific to ${cityName} (max 150 chars)",
-  "local_description": "2-3 paragraphs about the restaurant/food scene in ${cityName} and how OrderBot helps local businesses. Mention specific areas, neighborhoods, or characteristics of the local food industry.",
+  "headline": "AI Voice Agents for ${cityName} Businesses",
+  "subheadline": "A compelling value proposition for all business types in ${cityName} (max 150 chars)",
+  "local_description": "2-3 paragraphs about the business landscape in ${cityName} and how VoiceFleet helps local businesses of all types. Mention the diverse business community, local economy, and specific areas or business districts.",
   "local_benefits": [
-    {"title": "Benefit 1 title", "description": "Description specific to ${cityName}"},
-    {"title": "Benefit 2 title", "description": "Description specific to ${cityName}"},
-    {"title": "Benefit 3 title", "description": "Description specific to ${cityName}"},
-    {"title": "Benefit 4 title", "description": "Description specific to ${cityName}"}
+    {"title": "24/7 Availability", "description": "How this benefits ${cityName} businesses specifically"},
+    {"title": "Cost Savings", "description": "Description specific to ${cityName} business costs"},
+    {"title": "Local Understanding", "description": "How VoiceFleet understands ${cityName} context"},
+    {"title": "Scalability", "description": "Description specific to ${cityName} business growth"}
   ],
   "local_stats": {
-    "restaurants_estimate": "Number of restaurants in the area",
+    "businesses_estimate": "Estimated number of businesses in the area",
     "missed_calls_cost": "Average cost of missed calls in Euro",
-    "busy_times": "Peak busy times for local restaurants"
+    "peak_times": "When local businesses are busiest"
   },
   "local_testimonial": {
-    "quote": "A realistic testimonial from a fictional ${cityName} restaurant owner",
+    "quote": "A realistic testimonial from a fictional ${cityName} business owner",
     "author": "Owner name",
-    "business": "A realistic ${cityName} restaurant name",
-    "business_type": "Type of restaurant"
+    "business": "A realistic ${cityName} business name",
+    "business_type": "Type of business (e.g., dental practice, plumber, salon)"
   },
+  "industries_served": ["Healthcare", "Professional Services", "Home Services", "Beauty & Wellness", "Retail", "Automotive"],
   "faq": [
-    {"question": "Question specific to ${cityName} restaurant owners", "answer": "Detailed answer"},
-    {"question": "Question 2", "answer": "Answer 2"},
-    {"question": "Question 3", "answer": "Answer 3"},
-    {"question": "Question 4", "answer": "Answer 4"},
-    {"question": "Question 5", "answer": "Answer 5"}
+    {"question": "Question specific to ${cityName} business owners", "answer": "Detailed answer"},
+    {"question": "Question about industries served in ${cityName}", "answer": "Answer 2"},
+    {"question": "Question about pricing for ${cityName} businesses", "answer": "Answer 3"},
+    {"question": "Question about integration and setup", "answer": "Answer 4"},
+    {"question": "Question about local support", "answer": "Answer 5"}
   ],
   "nearby_locations": ["3-5 nearby towns/areas that would also benefit"],
-  "meta_title": "AI Phone Answering for Restaurants in ${cityName} | OrderBot (max 60 chars)",
-  "meta_description": "SEO-optimized description for ${cityName} restaurants using OrderBot AI phone answering. Under 155 chars."
+  "meta_title": "AI Voice Agents for ${cityName} Businesses | VoiceFleet (max 60 chars)",
+  "meta_description": "SEO-optimized description for ${cityName} businesses using VoiceFleet AI voice agents. Under 155 chars."
 }
 
 Important:
 - Use Irish English spelling (centre, colour, favour)
 - Reference local landmarks, areas, or characteristics of ${cityName}
 - Make the content feel authentic and locally relevant
+- Mention multiple industries that can benefit
 - All prices should be in Euro (€)
 - Keep meta_title under 60 characters
 - Keep meta_description under 155 characters`;
@@ -76,36 +144,38 @@ Important:
  * @returns {string} Prompt for AI
  */
 function getIndustryPrompt(industryName, metadata = {}) {
-    const avgOrder = metadata.avg_order ? `Average order value: €${metadata.avg_order}` : '';
+    const useCase = getUseCaseDescription(metadata);
+    const industryType = getIndustryTypeDescription(metadata);
 
-    return `You are a content writer for OrderBot, an AI phone answering service for Irish restaurants, cafes, and takeaways.
+    return `You are a content writer for VoiceFleet, an AI voice agent service that handles phone calls for businesses across all industries.
 
-Generate SEO-optimized content for an industry page targeting "${industryName}" businesses in Ireland.
+Generate SEO-optimized content for an industry page targeting "${industryName}" businesses in Ireland and Europe.
 
 Context:
-- OrderBot answers phone calls for restaurants 24/7 using AI
-- Target audience: ${industryName} owners and managers in Ireland
+- VoiceFleet provides AI voice agents that answer phone calls 24/7
+- Main use case for ${industryName}: ${useCase}
+- Industry category: ${industryType}
+- Target audience: ${industryName} owners and managers
 - Tone: Professional, helpful, industry-specific
-- Brand: OrderBot - "Never Miss an Order Again"
-${avgOrder ? `- ${avgOrder}` : ''}
+- Brand: VoiceFleet - "AI Voice Agents at 80% Lower Cost"
 
 Generate the following JSON structure (respond ONLY with valid JSON, no other text):
 
 {
-  "headline": "${industryName} Phone Answering Solution",
+  "headline": "AI Voice Agents for ${industryName}",
   "subheadline": "A compelling value proposition for ${industryName} (max 150 chars)",
-  "problem_statement": "2-3 paragraphs about the specific challenges ${industryName} face with phone calls. Include pain points like missed orders during busy periods, staff juggling phones while serving, lost revenue, etc.",
-  "solution_description": "2-3 paragraphs about how OrderBot specifically solves these problems for ${industryName}. Be specific about features relevant to this industry.",
+  "problem_statement": "2-3 paragraphs about the specific challenges ${industryName} face with phone calls. Include pain points like missed calls during busy periods, staff juggling phones while working, lost revenue, poor customer experience, after-hours calls, etc.",
+  "solution_description": "2-3 paragraphs about how VoiceFleet specifically solves these problems for ${industryName}. Focus on ${useCase}. Be specific about features relevant to this industry.",
   "benefits": [
-    {"title": "Benefit 1", "description": "How this benefits ${industryName} specifically", "icon": "phone"},
-    {"title": "Benefit 2", "description": "Description", "icon": "clock"},
-    {"title": "Benefit 3", "description": "Description", "icon": "euro"},
-    {"title": "Benefit 4", "description": "Description", "icon": "users"},
-    {"title": "Benefit 5", "description": "Description", "icon": "check"},
-    {"title": "Benefit 6", "description": "Description", "icon": "star"}
+    {"title": "Never Miss a Call", "description": "How 24/7 availability benefits ${industryName} specifically", "icon": "phone"},
+    {"title": "80% Cost Savings", "description": "Cost comparison vs traditional receptionists", "icon": "euro"},
+    {"title": "Instant Response", "description": "How quick response benefits ${industryName}", "icon": "clock"},
+    {"title": "Professional Service", "description": "How AI maintains professionalism", "icon": "users"},
+    {"title": "Smart Integration", "description": "How it integrates with ${industryName} systems", "icon": "check"},
+    {"title": "Scalable Solution", "description": "How it scales with ${industryName} growth", "icon": "star"}
   ],
   "use_cases": [
-    {"title": "Use case 1", "description": "Detailed description", "example": "Example call scenario for ${industryName}"},
+    {"title": "Use case 1 for ${industryName}", "description": "Detailed description of ${useCase}", "example": "Example call scenario"},
     {"title": "Use case 2", "description": "Description", "example": "Example"},
     {"title": "Use case 3", "description": "Description", "example": "Example"},
     {"title": "Use case 4", "description": "Description", "example": "Example"}
@@ -113,29 +183,30 @@ Generate the following JSON structure (respond ONLY with valid JSON, no other te
   "testimonial": {
     "quote": "A realistic testimonial from a ${industryName} owner",
     "author": "Owner name",
-    "business": "A realistic Irish ${industryName} name",
+    "business": "A realistic ${industryName} name",
     "location": "Irish city/town"
   },
   "industry_stats": {
     "missed_call_rate": "Percentage of missed calls in ${industryName}",
-    "avg_order_value": "Average order value",
+    "avg_call_value": "Average value of each call/inquiry",
     "peak_hours": "Typical peak hours for ${industryName}"
   },
   "faq": [
-    {"question": "Industry-specific question about ${industryName}", "answer": "Detailed answer"},
-    {"question": "Question 2", "answer": "Answer 2"},
-    {"question": "Question 3", "answer": "Answer 3"},
-    {"question": "Question 4", "answer": "Answer 4"},
-    {"question": "Question 5", "answer": "Answer 5"}
+    {"question": "Industry-specific question about ${industryName} and AI voice agents", "answer": "Detailed answer"},
+    {"question": "Question about ${useCase}", "answer": "Answer 2"},
+    {"question": "Question about pricing for ${industryName}", "answer": "Answer 3"},
+    {"question": "Question about setup and integration", "answer": "Answer 4"},
+    {"question": "Question about call handling quality", "answer": "Answer 5"}
   ],
-  "related_industries": ["3-5 related business types"],
-  "meta_title": "${industryName} AI Phone Answering | OrderBot Ireland (max 60 chars)",
-  "meta_description": "SEO-optimized description for ${industryName} using OrderBot. Under 155 chars."
+  "related_industries": ["3-5 related business types that also use VoiceFleet"],
+  "meta_title": "AI Voice Agents for ${industryName} | VoiceFleet (max 60 chars)",
+  "meta_description": "SEO-optimized description for ${industryName} using VoiceFleet. Under 155 chars."
 }
 
 Important:
 - Use Irish English spelling
 - Be specific to the ${industryName} industry
+- Focus on ${useCase} as the main value proposition
 - Include realistic scenarios and examples
 - All prices in Euro (€)
 - Keep meta_title under 60 characters
@@ -152,33 +223,35 @@ Important:
  */
 function getComboPrompt(cityName, industryName, locationMetadata = {}, industryMetadata = {}) {
     const county = locationMetadata.county ? `County: ${locationMetadata.county}` : '';
-    const avgOrder = industryMetadata.avg_order ? `Average order: €${industryMetadata.avg_order}` : '';
+    const useCase = getUseCaseDescription(industryMetadata);
+    const industryType = getIndustryTypeDescription(industryMetadata);
 
-    return `You are a content writer for OrderBot, an AI phone answering service for Irish restaurants, cafes, and takeaways.
+    return `You are a content writer for VoiceFleet, an AI voice agent service that handles phone calls for businesses across all industries.
 
 Generate SEO-optimized content for a combo page targeting "${industryName}" in "${cityName}", Ireland.
 
 Context:
-- OrderBot answers phone calls for restaurants 24/7 using AI
+- VoiceFleet provides AI voice agents that answer phone calls 24/7
+- Main use case: ${useCase}
+- Industry category: ${industryType}
 - Target audience: ${industryName} owners in ${cityName}, Ireland
 - Tone: Professional, helpful, hyper-local and industry-specific
-- Brand: OrderBot - "Never Miss an Order Again"
+- Brand: VoiceFleet - "AI Voice Agents at 80% Lower Cost"
 ${county ? `- ${county}` : ''}
-${avgOrder ? `- ${avgOrder}` : ''}
 
 Generate the following JSON structure (respond ONLY with valid JSON, no other text):
 
 {
-  "headline": "${industryName} Phone Answering in ${cityName}",
+  "headline": "AI Voice Agents for ${industryName} in ${cityName}",
   "subheadline": "Hyper-local value proposition combining ${industryName} and ${cityName} (max 150 chars)",
-  "intro": "2-3 paragraphs introducing OrderBot specifically for ${industryName} in ${cityName}. Mention the local ${industryName} scene, competition, and unique challenges.",
-  "why_need": "2-3 paragraphs explaining why ${industryName} in ${cityName} specifically need AI phone answering. Reference local factors, competition, busy periods, events, etc.",
-  "local_industry_context": "A paragraph about the ${industryName} landscape in ${cityName} - how many there are, popular areas, competition level.",
+  "intro": "2-3 paragraphs introducing VoiceFleet specifically for ${industryName} in ${cityName}. Mention the local ${industryName} scene, competition, and unique challenges. Focus on ${useCase}.",
+  "why_need": "2-3 paragraphs explaining why ${industryName} in ${cityName} specifically need AI voice agents. Reference local factors, competition, busy periods, local events, tourism (if relevant), etc.",
+  "local_industry_context": "A paragraph about the ${industryName} landscape in ${cityName} - how many there are, popular areas, competition level, local market conditions.",
   "benefits": [
-    {"title": "Benefit 1", "description": "Specific to ${industryName} in ${cityName}"},
-    {"title": "Benefit 2", "description": "Description"},
-    {"title": "Benefit 3", "description": "Description"},
-    {"title": "Benefit 4", "description": "Description"}
+    {"title": "24/7 Local Availability", "description": "Specific to ${industryName} in ${cityName}"},
+    {"title": "Cost Effective", "description": "Savings compared to local staff costs"},
+    {"title": "Local Understanding", "description": "How the AI understands ${cityName} context"},
+    {"title": "Professional Service", "description": "Maintaining ${industryName} standards"}
   ],
   "local_stats": {
     "estimated_businesses": "Estimated number of ${industryName} in ${cityName}",
@@ -187,27 +260,28 @@ Generate the following JSON structure (respond ONLY with valid JSON, no other te
   },
   "case_study": {
     "business_name": "A fictional but realistic ${industryName} in ${cityName}",
-    "challenge": "The challenge they faced",
-    "solution": "How OrderBot helped",
-    "results": ["Result 1", "Result 2", "Result 3"]
+    "challenge": "The challenge they faced with phone calls",
+    "solution": "How VoiceFleet helped with ${useCase}",
+    "results": ["Result 1 (e.g., 40% more bookings)", "Result 2", "Result 3"]
   },
   "faq": [
     {"question": "Hyper-local question about ${industryName} in ${cityName}", "answer": "Detailed answer"},
-    {"question": "Question 2", "answer": "Answer 2"},
-    {"question": "Question 3", "answer": "Answer 3"},
-    {"question": "Question 4", "answer": "Answer 4"}
+    {"question": "Question about ${useCase} for local businesses", "answer": "Answer 2"},
+    {"question": "Question about pricing", "answer": "Answer 3"},
+    {"question": "Question about getting started", "answer": "Answer 4"}
   ],
-  "cta_text": "Get OrderBot for Your ${cityName} ${industryName}",
+  "cta_text": "Get VoiceFleet for Your ${cityName} ${industryName}",
   "related_locations": ["3-4 nearby locations with ${industryName}"],
   "related_industries": ["3-4 related business types in ${cityName}"],
-  "meta_title": "${industryName} Phone Answering ${cityName} | OrderBot (max 60 chars)",
-  "meta_description": "AI phone answering for ${industryName} in ${cityName}. Under 155 chars."
+  "meta_title": "${industryName} AI Voice Agents ${cityName} | VoiceFleet (max 60 chars)",
+  "meta_description": "AI voice agents for ${industryName} in ${cityName}. Under 155 chars."
 }
 
 Important:
 - Use Irish English spelling
 - Make content feel hyper-local and specific to ${industryName} in ${cityName}
 - Reference local characteristics, areas, and context
+- Focus on ${useCase} as the main value proposition
 - All prices in Euro (€)
 - Keep meta_title under 60 characters
 - Keep meta_description under 155 characters
@@ -226,5 +300,7 @@ module.exports = {
     getLocationPrompt,
     getIndustryPrompt,
     getComboPrompt,
-    getTemplateTypes
+    getTemplateTypes,
+    getUseCaseDescription,
+    getIndustryTypeDescription
 };
