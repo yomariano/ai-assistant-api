@@ -38,11 +38,20 @@ async function getNextItems(limit = 5) {
  * @returns {Promise<Object>} Updated queue item
  */
 async function markAsProcessing(queueId) {
+    // First get current attempts
+    const { data: current } = await supabaseAdmin
+        .from('content_generation_queue')
+        .select('attempts')
+        .eq('id', queueId)
+        .single();
+
+    const newAttempts = (current?.attempts || 0) + 1;
+
     const { data, error } = await supabaseAdmin
         .from('content_generation_queue')
         .update({
             status: 'processing',
-            attempts: supabaseAdmin.sql`attempts + 1`,
+            attempts: newAttempts,
             updated_at: new Date().toISOString()
         })
         .eq('id', queueId)
