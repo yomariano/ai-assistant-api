@@ -40,7 +40,7 @@ async function callClaudeAPI(prompt, model = 'haiku') {
     const generationTime = Date.now() - startTime;
 
     return {
-        content: result.response || result.content || result,
+        content: result.result || result.response || result.content || result,
         generationTime,
         promptLength: prompt.length
     };
