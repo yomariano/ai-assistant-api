@@ -27,6 +27,7 @@ const createUserClient = (accessToken) => {
 };
 
 module.exports = {
+  supabase: supabaseAdmin, // Alias for routes that use 'supabase'
   supabaseAdmin,
   createUserClient
 };
