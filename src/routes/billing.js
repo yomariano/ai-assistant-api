@@ -8,6 +8,8 @@ const {
   createPortalSession,
   handleSubscriptionChange,
   handleSubscriptionDeleted,
+  handleInvoicePaymentFailed,
+  handleInvoicePaymentSucceeded,
   getSubscription,
   getPlans,
   calculateOverage,
@@ -16,12 +18,45 @@ const {
   PLAN_LIMITS,
   PAYMENT_LINKS
 } = require('../services/stripe');
+const {
+  detectRegion,
+  getRegionConfig,
+  getAllPricingForRegion,
+  getPaymentLinkForRegion,
+  getClientIp,
+} = require('../services/geoLocation');
+const usageTracking = require('../services/usageTracking');
 
 const router = express.Router();
 
 /**
+ * GET /api/billing/region
+ * Detect user's region and return geo-targeted pricing
+ */
+router.get('/region', async (req, res, next) => {
+  try {
+    // Allow override via query param for testing
+    let region = req.query.region;
+
+    if (!region) {
+      const clientIp = getClientIp(req);
+      region = await detectRegion(clientIp);
+    }
+
+    const pricing = getAllPricingForRegion(region);
+
+    res.json({
+      detected: !req.query.region,
+      ...pricing,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * GET /api/billing/plans
- * Get all available subscription plans
+ * Get all available subscription plans (legacy - use /region instead)
  */
 router.get('/plans', async (req, res, next) => {
   try {
@@ -79,10 +114,12 @@ router.get('/subscription', authenticate, async (req, res, next) => {
 /**
  * GET /api/billing/payment-link/:planId
  * Get Stripe Payment Link URL for a plan
+ * Supports region query param for geo-targeted pricing
  */
 router.get('/payment-link/:planId', authenticate, async (req, res, next) => {
   try {
     const { planId } = req.params;
+    const { region: regionOverride } = req.query;
 
     if (!planId || !['starter', 'growth', 'scale'].includes(planId)) {
       return res.status(400).json({ error: { message: 'Invalid plan ID' } });
@@ -96,8 +133,26 @@ router.get('/payment-link/:planId', authenticate, async (req, res, next) => {
       });
     }
 
-    const url = getPaymentLink(planId, req.userId);
-    res.json({ url });
+    // Detect region for geo-targeted pricing
+    let region = regionOverride;
+    if (!region) {
+      const clientIp = getClientIp(req);
+      region = await detectRegion(clientIp);
+    }
+
+    // Try to get region-specific payment link first
+    let url = getPaymentLinkForRegion(region, planId);
+
+    // Fall back to default payment link if region-specific not available
+    if (!url) {
+      url = getPaymentLink(planId, req.userId);
+    } else {
+      // Append client_reference_id to the payment link
+      const separator = url.includes('?') ? '&' : '?';
+      url = `${url}${separator}client_reference_id=${req.userId}`;
+    }
+
+    res.json({ url, region });
   } catch (error) {
     next(error);
   }
@@ -150,64 +205,66 @@ router.post('/portal', authenticate, async (req, res, next) => {
 
 /**
  * GET /api/billing/usage
- * Get current usage for the billing period
+ * Get current usage for the billing period (OrderBot pay-per-call model)
  */
 router.get('/usage', authenticate, async (req, res, next) => {
   try {
     const subscription = await getSubscription(req.userId);
+    const planId = subscription?.plan_id || 'starter';
 
-    if (!subscription) {
-      return res.json({
-        minutesUsed: 0,
-        minutesIncluded: 0,
-        callsMade: 0,
-        percentUsed: 0,
-        overage: null
-      });
-    }
-
-    const planId = subscription.plan_id || 'starter';
+    // Use new usageTracking service for per-call billing
+    const usage = await usageTracking.getUsageSummary(req.userId, planId);
     const planLimits = getPlanLimits(planId);
-    const overageRate = getOverageRate(planId);
-
-    // Get current period usage
-    const periodStart = new Date();
-    periodStart.setDate(1);
-    periodStart.setHours(0, 0, 0, 0);
-
-    const { data: usage } = await supabaseAdmin
-      .from('usage_tracking')
-      .select('*')
-      .eq('user_id', req.userId)
-      .eq('period_start', periodStart.toISOString().slice(0, 10))
-      .single();
-
-    const minutesUsed = usage?.minutes_used || 0;
-    const minutesIncluded = planLimits.minutesIncluded;
-
-    // Calculate overage
-    const overageMinutes = Math.max(0, minutesUsed - minutesIncluded);
-    const overageAmountCents = overageMinutes * overageRate;
 
     res.json({
-      minutesUsed,
-      minutesIncluded,
-      callsMade: usage?.calls_made || 0,
-      minutesRemaining: Math.max(0, minutesIncluded - minutesUsed),
-      percentUsed: minutesIncluded > 0 ? Math.round((minutesUsed / minutesIncluded) * 100) : 0,
-      maxMinutesPerCall: planLimits.maxMinutesPerCall,
+      // Per-call billing fields
+      callsMade: usage.callsMade,
+      totalChargesCents: usage.totalChargesCents,
+      totalChargesFormatted: usage.totalChargesFormatted,
+      perCallRateCents: usage.perCallRateCents,
+      perCallRateFormatted: usage.perCallRateFormatted,
+      fairUseCap: usage.fairUseCap,
+      callsRemaining: usage.callsRemaining,
+      isUnlimited: usage.isUnlimited,
+      periodStart: usage.periodStart,
+      periodEnd: usage.periodEnd,
+
+      // Plan limits
       planLimits: {
         phoneNumbers: planLimits.phoneNumbers,
         maxConcurrentCalls: planLimits.maxConcurrentCalls
-      },
-      overage: {
-        minutes: overageMinutes,
-        ratePerMinuteCents: overageRate,
-        ratePerMinute: `$${(overageRate / 100).toFixed(2)}`,
-        totalCents: overageAmountCents,
-        total: `$${(overageAmountCents / 100).toFixed(2)}`
       }
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/billing/can-make-call
+ * Check if user can make a call (fair use cap enforcement)
+ */
+router.get('/can-make-call', authenticate, async (req, res, next) => {
+  try {
+    const subscription = await getSubscription(req.userId);
+    const planId = subscription?.plan_id || 'starter';
+
+    const result = await usageTracking.canMakeCall(req.userId, planId);
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/billing/trial-usage
+ * Get trial usage for current user
+ */
+router.get('/trial-usage', authenticate, async (req, res, next) => {
+  try {
+    const usage = await usageTracking.getTrialUsage(req.userId);
+    res.json(usage);
   } catch (error) {
     next(error);
   }
@@ -245,16 +302,20 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
       case 'invoice.payment_succeeded':
         // Subscription payment successful - ensure subscription is active
-        const invoice = event.data.object;
-        if (invoice.subscription) {
-          const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+        const invoiceSuccess = event.data.object;
+        if (invoiceSuccess.subscription) {
+          const subscription = await stripe.subscriptions.retrieve(invoiceSuccess.subscription);
           await handleSubscriptionChange(subscription);
         }
+        // Send confirmation email for renewals
+        await handleInvoicePaymentSucceeded(invoiceSuccess);
         break;
 
       case 'invoice.payment_failed':
-        // Handle failed payment
-        console.log('Payment failed for invoice:', event.data.object.id);
+        // Handle failed payment - send email notification
+        const invoiceFailed = event.data.object;
+        console.log('Payment failed for invoice:', invoiceFailed.id);
+        await handleInvoicePaymentFailed(invoiceFailed);
         break;
 
       case 'checkout.session.completed':
@@ -402,6 +463,184 @@ router.get('/provisioning-status', authenticate, async (req, res, next) => {
       isComplete: !queue || queue.status === 'completed',
       hasFailed: queue?.status === 'failed'
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================
+// TEST ENDPOINTS (Dev mode only)
+// ============================================
+
+/**
+ * POST /api/billing/test/simulate-call
+ * Simulate a call for E2E testing
+ */
+router.post('/test/simulate-call', async (req, res, next) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  try {
+    const { userId, planId, vapiCostCents = 50, isTrial = false } = req.body;
+
+    if (!userId || !planId) {
+      return res.status(400).json({ error: 'userId and planId are required' });
+    }
+
+    const result = await usageTracking.recordCall(
+      userId,
+      planId,
+      vapiCostCents,
+      null, // No call ID for simulated calls
+      isTrial
+    );
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/billing/test/simulate-checkout
+ * Simulate a Stripe checkout completion for E2E testing
+ */
+router.post('/test/simulate-checkout', async (req, res, next) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  try {
+    const { userId, planId, customerId, subscriptionId } = req.body;
+
+    if (!userId || !planId) {
+      return res.status(400).json({ error: 'userId and planId are required' });
+    }
+
+    // Create or update subscription
+    const { error } = await supabaseAdmin
+      .from('user_subscriptions')
+      .upsert({
+        user_id: userId,
+        plan_id: planId,
+        status: 'active',
+        stripe_customer_id: customerId || `cus_test_${Date.now()}`,
+        stripe_subscription_id: subscriptionId || `sub_test_${Date.now()}`,
+        current_period_start: new Date().toISOString(),
+        current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      }, {
+        onConflict: 'user_id'
+      });
+
+    if (error) throw error;
+
+    res.json({ success: true, message: `Simulated checkout for ${planId} plan` });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/billing/test/simulate-plan-change
+ * Simulate a plan upgrade/downgrade for E2E testing
+ */
+router.post('/test/simulate-plan-change', async (req, res, next) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  try {
+    const { userId, newPlanId } = req.body;
+
+    if (!userId || !newPlanId) {
+      return res.status(400).json({ error: 'userId and newPlanId are required' });
+    }
+
+    const { error } = await supabaseAdmin
+      .from('user_subscriptions')
+      .update({
+        plan_id: newPlanId,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', userId);
+
+    if (error) throw error;
+
+    res.json({ success: true, message: `Changed to ${newPlanId} plan` });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/billing/test/simulate-cancellation
+ * Simulate subscription cancellation for E2E testing
+ */
+router.post('/test/simulate-cancellation', async (req, res, next) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const { error } = await supabaseAdmin
+      .from('user_subscriptions')
+      .update({
+        status: 'canceled',
+        canceled_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', userId);
+
+    if (error) throw error;
+
+    res.json({ success: true, message: 'Subscription canceled' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/billing/test/reset-user
+ * Reset test user to clean state for E2E testing
+ */
+router.post('/test/reset-user', async (req, res, next) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    // Delete subscription
+    await supabaseAdmin
+      .from('user_subscriptions')
+      .delete()
+      .eq('user_id', userId);
+
+    // Delete usage tracking
+    await supabaseAdmin
+      .from('usage_tracking')
+      .delete()
+      .eq('user_id', userId);
+
+    // Delete trial usage
+    await supabaseAdmin
+      .from('trial_usage')
+      .delete()
+      .eq('user_id', userId);
+
+    res.json({ success: true, message: 'User reset complete' });
   } catch (error) {
     next(error);
   }

@@ -199,10 +199,68 @@ router.get('/features/:slug', async (req, res) => {
   }
 });
 
+// GET /api/content/combo - List all published combo pages
+router.get('/combo', async (req, res) => {
+  try {
+    const { location, industry, limit = 100, offset = 0 } = req.query;
+
+    let query = supabase
+      .from('combo_pages')
+      .select('id, slug, location_slug, industry_slug, city_name, industry_name, headline, subheadline, published_at, updated_at')
+      .eq('status', 'published')
+      .order('city_name', { ascending: true })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+
+    if (location) {
+      query = query.eq('location_slug', location);
+    }
+
+    if (industry) {
+      query = query.eq('industry_slug', industry);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+
+    res.json(data || []);
+  } catch (error) {
+    console.error('Error fetching combo pages:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch combo pages' } });
+  }
+});
+
+// GET /api/content/combo/:industry/:location - Get single combo page
+router.get('/combo/:industry/:location', async (req, res) => {
+  try {
+    const { industry, location } = req.params;
+
+    const { data, error } = await supabase
+      .from('combo_pages')
+      .select('*')
+      .eq('industry_slug', industry)
+      .eq('location_slug', location)
+      .eq('status', 'published')
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ error: { message: 'Combo page not found' } });
+      }
+      throw error;
+    }
+
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching combo page:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch combo page' } });
+  }
+});
+
 // GET /api/content/sitemap-data - Get all published content for sitemap
 router.get('/sitemap-data', async (req, res) => {
   try {
-    const [blogResult, useCaseResult, locationResult, featureResult] = await Promise.all([
+    const [blogResult, useCaseResult, locationResult, featureResult, comboResult] = await Promise.all([
       supabase
         .from('blog_posts')
         .select('slug, updated_at')
@@ -219,18 +277,24 @@ router.get('/sitemap-data', async (req, res) => {
         .from('feature_pages')
         .select('slug, updated_at')
         .eq('status', 'published'),
+      supabase
+        .from('combo_pages')
+        .select('industry_slug, location_slug, updated_at')
+        .eq('status', 'published'),
     ]);
 
     if (blogResult.error) throw blogResult.error;
     if (useCaseResult.error) throw useCaseResult.error;
     if (locationResult.error) throw locationResult.error;
     if (featureResult.error) throw featureResult.error;
+    if (comboResult.error) throw comboResult.error;
 
     res.json({
       blogPosts: blogResult.data || [],
       useCases: useCaseResult.data || [],
       locations: locationResult.data || [],
       features: featureResult.data || [],
+      combos: comboResult.data || [],
     });
   } catch (error) {
     console.error('Error fetching sitemap data:', error);

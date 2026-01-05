@@ -15,10 +15,14 @@ const billingRoutes = require('./routes/billing');
 const contentRoutes = require('./routes/content');
 const assistantRoutes = require('./routes/assistant');
 const testHelpersRoutes = require('./routes/testHelpers');
+const notificationRoutes = require('./routes/notifications');
+const vapiWebhookRoutes = require('./routes/vapiWebhooks');
+const seoGenerationRoutes = require('./routes/seoGeneration');
 
 // Import scheduled jobs
 const { startScheduledCallsJob } = require('./jobs/scheduledCalls');
 const { startProvisioningRetryJob } = require('./jobs/provisioningRetry');
+const { startNumberPoolMaintenanceJob } = require('./jobs/numberPoolMaintenance');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -56,6 +60,9 @@ app.use('/api/billing', billingRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/assistant', assistantRoutes);
 app.use('/api/billing/test', testHelpersRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/vapi', vapiWebhookRoutes);
+app.use('/api/seo', seoGenerationRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -80,4 +87,5 @@ app.listen(PORT, () => {
   // Start scheduled jobs
   startScheduledCallsJob();
   startProvisioningRetryJob();
+  startNumberPoolMaintenanceJob();
 });

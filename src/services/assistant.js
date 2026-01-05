@@ -1,6 +1,7 @@
 const { supabaseAdmin } = require('./supabase');
 const { getPlanLimits } = require('./stripe');
 const { getVoiceProvider } = require('../adapters/voice');
+const { getEscalationSettings } = require('./notifications');
 
 /**
  * Default assistant template - customize based on your use case
@@ -79,12 +80,22 @@ async function createAssistantForUser(userId, options = {}) {
   // Build first message
   const firstMessage = `Hi! This is ${greetingName}${businessName ? ` from ${businessName}` : ''}. How can I help you today?`;
 
+  // Get escalation settings if configured
+  let escalationSettings = null;
+  try {
+    escalationSettings = await getEscalationSettings(userId);
+  } catch (err) {
+    // No escalation settings yet, that's fine
+  }
+
   // Create assistant in Voice AI provider
   const assistantConfig = {
     ...DEFAULT_ASSISTANT_TEMPLATE,
     name: `Assistant-${userId.slice(0, 8)}`,
     firstMessage,
-    systemPrompt
+    systemPrompt,
+    // Include escalation settings for transfer call tool
+    ...(escalationSettings?.transfer_enabled && { escalationSettings }),
   };
 
   try {
@@ -187,6 +198,18 @@ async function updateAssistant(userId, updates) {
       provider: updates.voiceProvider,
       voiceId: updates.voiceId
     };
+  }
+
+  // Include escalation settings if syncing is requested
+  if (updates.syncEscalation) {
+    try {
+      const escalationSettings = await getEscalationSettings(userId);
+      if (escalationSettings?.transfer_enabled) {
+        vapiUpdates.escalationSettings = escalationSettings;
+      }
+    } catch (err) {
+      // No escalation settings, skip
+    }
   }
 
   // Update in Voice AI provider if there are changes
@@ -294,6 +317,46 @@ function getAvailableVoices(planId) {
   return VOICE_OPTIONS[planId] || VOICE_OPTIONS.starter;
 }
 
+/**
+ * Sync escalation settings to the Vapi assistant
+ * Call this when escalation settings are updated
+ */
+async function syncEscalationToAssistant(userId) {
+  // Get assistant
+  const { data: assistant } = await supabaseAdmin
+    .from('user_assistants')
+    .select('vapi_assistant_id')
+    .eq('user_id', userId)
+    .single();
+
+  if (!assistant?.vapi_assistant_id) {
+    console.log(`[Assistant] No assistant found for user ${userId}, skipping escalation sync`);
+    return;
+  }
+
+  // Get escalation settings
+  let escalationSettings = null;
+  try {
+    escalationSettings = await getEscalationSettings(userId);
+  } catch (err) {
+    // No settings, nothing to sync
+    return;
+  }
+
+  const voiceProvider = getVoiceProvider();
+
+  // Update the assistant with escalation settings
+  try {
+    await voiceProvider.updateAssistant(assistant.vapi_assistant_id, {
+      escalationSettings: escalationSettings?.transfer_enabled ? escalationSettings : null,
+    });
+    console.log(`[Assistant] Synced escalation settings for user ${userId}`);
+  } catch (error) {
+    console.error('[Assistant] Failed to sync escalation settings:', error.message);
+    throw error;
+  }
+}
+
 module.exports = {
   createAssistantForUser,
   updateAssistant,
@@ -302,5 +365,6 @@ module.exports = {
   deleteAssistant,
   getAvailableVoices,
   buildSystemPrompt,
+  syncEscalationToAssistant,
   VOICE_OPTIONS
 };

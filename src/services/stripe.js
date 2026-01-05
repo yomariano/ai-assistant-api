@@ -12,6 +12,24 @@ function getProvisioningService() {
   return provisioningService;
 }
 
+// Lazy load notifications to avoid circular dependency
+let notificationService = null;
+function getNotificationService() {
+  if (!notificationService) {
+    notificationService = require('./notifications');
+  }
+  return notificationService;
+}
+
+// Lazy load email service to avoid circular dependency
+let emailService = null;
+function getEmailService() {
+  if (!emailService) {
+    emailService = require('./emailService');
+  }
+  return emailService;
+}
+
 // Payment Links - create these in Stripe Dashboard and add URLs to .env
 // Pass ?client_reference_id={userId} when redirecting users
 const PAYMENT_LINKS = {
@@ -20,49 +38,74 @@ const PAYMENT_LINKS = {
   scale: process.env.STRIPE_PAYMENT_LINK_SCALE
 };
 
-// Map Stripe Price IDs to plan IDs (set these after creating products in Stripe)
+// Map Stripe Price IDs to plan IDs (supports both EUR and USD prices)
 const PRICE_TO_PLAN = {
+  // EUR prices (OrderBot Ireland)
+  [process.env.STRIPE_STARTER_PRICE_EUR]: 'starter',
+  [process.env.STRIPE_GROWTH_PRICE_EUR]: 'growth',
+  [process.env.STRIPE_SCALE_PRICE_EUR]: 'scale',
+  // USD prices (US market)
+  [process.env.STRIPE_STARTER_PRICE_USD]: 'starter',
+  [process.env.STRIPE_GROWTH_PRICE_USD]: 'growth',
+  [process.env.STRIPE_SCALE_PRICE_USD]: 'scale',
+  // Legacy (deprecated)
   [process.env.STRIPE_STARTER_PRICE_ID]: 'starter',
   [process.env.STRIPE_GROWTH_PRICE_ID]: 'growth',
   [process.env.STRIPE_SCALE_PRICE_ID]: 'scale'
 };
 
-// Plan pricing (in cents) - for reference and display
+// OrderBot Plan pricing (in cents) - EUR
+// Lite: €19/mo | Growth: €99/mo | Pro: €249/mo
 const PLAN_PRICES = {
-  starter: 2900,  // $29/mo
-  growth: 7900,   // $79/mo
-  scale: 19900    // $199/mo
+  starter: 1900,  // €19/mo (Lite)
+  growth: 9900,   // €99/mo (Growth)
+  scale: 24900    // €249/mo (Pro)
 };
 
-// Overage pricing per minute (in cents) by plan
+// Per-call rates (in cents) - used for usage tracking
+const PER_CALL_RATES = {
+  starter: 95,   // €0.95/call (Lite)
+  growth: 45,    // €0.45/call (Growth)
+  scale: 0       // €0/call (Pro - unlimited)
+};
+
+// Fair use caps (calls per month)
+const FAIR_USE_CAPS = {
+  starter: null,  // No cap (pay per call)
+  growth: null,   // No cap (pay per call)
+  scale: 1500     // 1500 calls/month
+};
+
+// Overage pricing per minute (in cents) by plan - legacy, not used in OrderBot
 const OVERAGE_RATES = {
-  starter: 25,  // $0.25/min
-  growth: 22,   // $0.22/min
-  scale: 18     // $0.18/min
+  starter: 25,
+  growth: 22,
+  scale: 18
 };
 
-// Plan limits
+// Plan limits (OrderBot model)
 const PLAN_LIMITS = {
   starter: {
-    minutesIncluded: 30,
+    minutesIncluded: 0,  // Pay per call
     phoneNumbers: 1,
     maxConcurrentCalls: 1,
-    maxMinutesPerCall: 10,
-    hoursType: 'business'  // business hours only (9am-6pm)
+    maxMinutesPerCall: 15,
+    hoursType: 'all'  // 24/7 for AI
   },
   growth: {
-    minutesIncluded: 100,
+    minutesIncluded: 0,  // Pay per call
     phoneNumbers: 2,
     maxConcurrentCalls: 3,
     maxMinutesPerCall: 15,
-    hoursType: 'business'  // business hours only (9am-6pm)
+    hoursType: 'all'
   },
   scale: {
-    minutesIncluded: 300,
+    minutesIncluded: 0,  // Unlimited (1500 fair use cap)
     phoneNumbers: 5,
     maxConcurrentCalls: 10,
     maxMinutesPerCall: 30,
-    hoursType: 'extended'  // extended hours (7am-10pm)
+    hoursType: 'all',  // 24/7 for AI
+    callsCap: 1500     // Fair use cap
   }
 };
 
@@ -174,6 +217,54 @@ async function handleCheckoutCompleted(session) {
   }
 
   console.log(`Subscription created for user ${userId}, plan: ${planId}`);
+
+  // Get user details for notifications
+  const { data: user } = await supabaseAdmin
+    .from('users')
+    .select('email, full_name')
+    .eq('id', userId)
+    .single();
+
+  // Send welcome email (async, non-blocking)
+  setImmediate(async () => {
+    try {
+      const { sendWelcomeEmail } = getEmailService();
+      await sendWelcomeEmail(userId, { planId });
+      console.log(`[Stripe] Welcome email sent to user ${userId}`);
+    } catch (emailError) {
+      console.error('[Stripe] Failed to send welcome email:', emailError);
+      // Don't throw - email failure shouldn't block subscription
+    }
+  });
+
+  // Check if this is an Ireland/EUR subscription (VoIPCloud - manual provisioning)
+  const currency = session.currency?.toLowerCase();
+  const isIrelandSubscription = currency === 'eur';
+
+  if (isIrelandSubscription) {
+    // Send email to support for manual VoIPCloud provisioning
+    console.log(`[Stripe] Ireland subscription detected - sending support notification`);
+    const { notifyIrelandSubscription } = getNotificationService();
+
+    try {
+      await notifyIrelandSubscription({
+        userId,
+        userEmail: user?.email,
+        userName: user?.full_name,
+        planId,
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: subscriptionId,
+        phoneNumbersRequired: PLAN_LIMITS[planId]?.phoneNumbers || 1,
+      });
+    } catch (notifyError) {
+      console.error('[Stripe] Failed to send Ireland subscription notification:', notifyError);
+      // Don't throw - notification failure shouldn't block subscription
+    }
+
+    // For Ireland, we don't auto-provision - manual process via VoIPCloud
+    console.log(`[Stripe] Ireland subscription - awaiting manual VoIPCloud provisioning`);
+    return;
+  }
 
   // Provision phone numbers for the user (async, non-blocking)
   // This runs in the background so webhook responds quickly
@@ -315,6 +406,13 @@ async function handleSubscriptionDeleted(subscription) {
     return;
   }
 
+  // Get subscription details before updating
+  const { data: currentSub } = await supabaseAdmin
+    .from('user_subscriptions')
+    .select('plan_id, current_period_end')
+    .eq('user_id', userId)
+    .single();
+
   // Update subscription status
   await supabaseAdmin
     .from('user_subscriptions')
@@ -323,6 +421,20 @@ async function handleSubscriptionDeleted(subscription) {
       updated_at: new Date().toISOString()
     })
     .eq('user_id', userId);
+
+  // Send cancellation email (async, non-blocking)
+  setImmediate(async () => {
+    try {
+      const { sendSubscriptionCancelledEmail } = getEmailService();
+      await sendSubscriptionCancelledEmail(userId, {
+        planId: currentSub?.plan_id || 'starter',
+        endDate: currentSub?.current_period_end || new Date().toISOString(),
+      });
+      console.log(`[Stripe] Cancellation email sent to user ${userId}`);
+    } catch (emailError) {
+      console.error('[Stripe] Failed to send cancellation email:', emailError);
+    }
+  });
 
   // Handle cancellation (release numbers, delete assistant) in background
   setImmediate(async () => {
@@ -334,6 +446,90 @@ async function handleSubscriptionDeleted(subscription) {
       console.error(`Cancellation handling failed for user ${userId}:`, cancelError);
     }
   });
+}
+
+/**
+ * Handle invoice.payment_failed - send payment failed email
+ */
+async function handleInvoicePaymentFailed(invoice) {
+  const subscriptionId = invoice.subscription;
+  if (!subscriptionId) {
+    console.log('[Stripe] Invoice payment failed - no subscription attached');
+    return;
+  }
+
+  // Get user from subscription
+  const { data: subData } = await supabaseAdmin
+    .from('user_subscriptions')
+    .select('user_id, plan_id')
+    .eq('stripe_subscription_id', subscriptionId)
+    .single();
+
+  if (!subData?.user_id) {
+    console.error('[Stripe] Could not find user for failed invoice');
+    return;
+  }
+
+  const { sendPaymentFailedEmail } = getEmailService();
+
+  try {
+    await sendPaymentFailedEmail(subData.user_id, {
+      planId: subData.plan_id,
+      amount: invoice.amount_due,
+      currency: invoice.currency,
+      retryDate: invoice.next_payment_attempt
+        ? new Date(invoice.next_payment_attempt * 1000).toISOString()
+        : null,
+    });
+    console.log(`[Stripe] Payment failed email sent for invoice ${invoice.id}`);
+  } catch (emailError) {
+    console.error('[Stripe] Failed to send payment failed email:', emailError);
+  }
+}
+
+/**
+ * Handle invoice.payment_succeeded - send subscription confirmation
+ */
+async function handleInvoicePaymentSucceeded(invoice) {
+  const subscriptionId = invoice.subscription;
+  if (!subscriptionId) {
+    // One-time payment, not a subscription
+    return;
+  }
+
+  // Skip sending confirmation for the first invoice (welcome email covers this)
+  // Only send for renewals (billing_reason = 'subscription_cycle')
+  if (invoice.billing_reason !== 'subscription_cycle') {
+    console.log(`[Stripe] Skipping confirmation email for billing_reason: ${invoice.billing_reason}`);
+    return;
+  }
+
+  // Get user from subscription
+  const { data: subData } = await supabaseAdmin
+    .from('user_subscriptions')
+    .select('user_id, plan_id, current_period_end')
+    .eq('stripe_subscription_id', subscriptionId)
+    .single();
+
+  if (!subData?.user_id) {
+    console.error('[Stripe] Could not find user for invoice payment');
+    return;
+  }
+
+  const { sendSubscriptionConfirmation } = getEmailService();
+
+  try {
+    await sendSubscriptionConfirmation(subData.user_id, {
+      planId: subData.plan_id,
+      amount: invoice.amount_paid,
+      currency: invoice.currency,
+      nextBillingDate: subData.current_period_end,
+      invoiceUrl: invoice.hosted_invoice_url,
+    });
+    console.log(`[Stripe] Subscription confirmation email sent for invoice ${invoice.id}`);
+  } catch (emailError) {
+    console.error('[Stripe] Failed to send confirmation email:', emailError);
+  }
 }
 
 /**
@@ -457,6 +653,8 @@ module.exports = {
   createPortalSession,
   handleSubscriptionChange,
   handleSubscriptionDeleted,
+  handleInvoicePaymentFailed,
+  handleInvoicePaymentSucceeded,
   getSubscription,
   getPlans,
   calculateOverage,

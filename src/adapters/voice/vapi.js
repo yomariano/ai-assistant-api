@@ -42,6 +42,8 @@ class VapiProvider {
       voice = {},
       transcriber = {},
       maxDurationSeconds = 600,
+      tools = [],
+      escalationSettings = null,
     } = config;
 
     const payload = {
@@ -57,6 +59,8 @@ class VapiProvider {
           },
         ],
         ...(model.temperature && { temperature: model.temperature }),
+        // Add built-in tools if specified
+        ...(tools.length > 0 && { tools }),
       },
       voice: {
         provider: voice.provider || 'playht',
@@ -69,6 +73,14 @@ class VapiProvider {
       maxDurationSeconds,
       firstMessageMode: config.firstMessageMode || 'assistant-speaks-first',
     };
+
+    // Add transfer call tool if escalation is enabled
+    if (escalationSettings?.transfer_enabled && escalationSettings?.transfer_number) {
+      payload.model.tools = payload.model.tools || [];
+      payload.model.tools.push(
+        this._buildTransferCallTool(escalationSettings)
+      );
+    }
 
     try {
       const response = await this.client.post('/assistant', payload);
@@ -97,6 +109,17 @@ class VapiProvider {
         provider: updates.voice.provider,
         voiceId: updates.voice.voiceId,
       };
+    }
+
+    // Handle escalation settings - add or remove transfer tool
+    if (updates.escalationSettings !== undefined) {
+      payload.model = payload.model || {};
+      if (updates.escalationSettings?.transfer_enabled && updates.escalationSettings?.transfer_number) {
+        payload.model.tools = [this._buildTransferCallTool(updates.escalationSettings)];
+      } else {
+        // Remove transfer tools by setting empty array
+        payload.model.tools = [];
+      }
     }
 
     try {
@@ -293,6 +316,71 @@ class VapiProvider {
       startedAt: data.startedAt,
       endedAt: data.endedAt,
     };
+  }
+
+  /**
+   * Build transfer call tool configuration for Vapi
+   * @param {Object} escalationSettings - User's escalation settings
+   * @returns {Object} Transfer call tool configuration
+   */
+  _buildTransferCallTool(escalationSettings) {
+    const {
+      transfer_number,
+      transfer_method = 'blind_transfer',
+      trigger_keywords = [],
+    } = escalationSettings;
+
+    // Build the tool description based on triggers
+    let description = 'Transfer the call to a human agent when the customer requests to speak with a person';
+
+    if (trigger_keywords.length > 0) {
+      description += `, or when they mention: ${trigger_keywords.join(', ')}`;
+    }
+
+    const tool = {
+      type: 'transferCall',
+      function: {
+        name: 'transferCall',
+        description,
+        parameters: {
+          type: 'object',
+          properties: {
+            reason: {
+              type: 'string',
+              description: 'The reason for the transfer',
+            },
+          },
+        },
+      },
+      destinations: [
+        {
+          type: 'number',
+          number: transfer_number,
+          message: this._getTransferMessage(transfer_method),
+          transferPlan: {
+            mode: transfer_method === 'warm_transfer' ? 'warm-transfer-say-message' : 'blind-transfer',
+          },
+        },
+      ],
+    };
+
+    return tool;
+  }
+
+  /**
+   * Get appropriate transfer message based on method
+   */
+  _getTransferMessage(method) {
+    switch (method) {
+      case 'warm_transfer':
+        return 'Please hold while I connect you with a team member who can better assist you.';
+      case 'blind_transfer':
+        return 'I\'m transferring you now. Please hold.';
+      case 'callback':
+        return 'A team member will call you back shortly.';
+      default:
+        return 'Transferring you now.';
+    }
   }
 }
 
