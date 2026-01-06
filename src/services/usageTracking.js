@@ -138,25 +138,33 @@ async function recordCall(userId, planId, vapiCostCents = 0, callId = null, isTr
   periodEnd.setDate(0); // Last day of current month
 
   if (isTrial) {
-    // Update trial usage
-    const { error } = await supabaseAdmin
+    // Update trial usage - check if record exists first
+    const { data: existingTrial } = await supabaseAdmin
       .from('trial_usage')
-      .upsert({
-        user_id: userId,
-        calls_made: 1,
-        minutes_used: 0,
-        total_cost_cents: 0,
-        updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'user_id'
-      });
+      .select('id, calls_made')
+      .eq('user_id', userId)
+      .single();
 
-    if (error) {
-      // If conflict, increment instead
-      await supabaseAdmin.rpc('increment_trial_usage', {
-        p_user_id: userId,
-        p_minutes: 0
-      });
+    if (existingTrial) {
+      // Increment existing trial usage
+      await supabaseAdmin
+        .from('trial_usage')
+        .update({
+          calls_made: existingTrial.calls_made + 1,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', userId);
+    } else {
+      // Create new trial usage record
+      await supabaseAdmin
+        .from('trial_usage')
+        .insert({
+          user_id: userId,
+          calls_made: 1,
+          minutes_used: 0,
+          total_cost_cents: 0,
+          updated_at: new Date().toISOString()
+        });
     }
   } else {
     // Update usage_tracking for billing period

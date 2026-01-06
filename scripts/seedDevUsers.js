@@ -35,12 +35,12 @@ const DEV_USERS = [
 async function seedDevUsers() {
   console.log('Seeding dev users...\n');
 
-  // First, ensure subscription plans exist
+  // First, ensure subscription plans exist (OrderBot per-call pricing model)
   console.log('Checking subscription plans...');
   const plans = [
-    { id: 'starter', name: 'Starter', price_cents: 2900, minutes_included: 30, max_minutes_per_call: 10 },
-    { id: 'growth', name: 'Growth', price_cents: 7900, minutes_included: 100, max_minutes_per_call: 15 },
-    { id: 'scale', name: 'Scale', price_cents: 19900, minutes_included: 300, max_minutes_per_call: 30 },
+    { id: 'starter', name: 'Lite', price_cents: 1900, minutes_included: 0, max_minutes_per_call: 30, per_call_rate_cents: 95 },
+    { id: 'growth', name: 'Growth', price_cents: 9900, minutes_included: 0, max_minutes_per_call: 30, per_call_rate_cents: 45 },
+    { id: 'scale', name: 'Pro', price_cents: 24900, minutes_included: 0, max_minutes_per_call: 30, per_call_rate_cents: 0, fair_use_cap: 1500 },
   ];
 
   for (const plan of plans) {
