@@ -10,6 +10,9 @@ const {
 const { getTelephonyProvider } = require('../adapters/telephony');
 const { getVoiceProvider } = require('../adapters/voice');
 
+// Number pool service for Ireland/VoIPCloud
+const numberPool = require('./numberPool');
+
 /**
  * Full provisioning flow after successful payment
  * 1. Create AI assistant for user (if not exists)
@@ -221,8 +224,141 @@ async function getUserPhoneNumbers(userId) {
   return data || [];
 }
 
+/**
+ * Provision Ireland user from the VoIPCloud number pool
+ * Used for EUR subscriptions where we assign from pre-purchased pool
+ *
+ * @param {string} userId - User ID
+ * @param {string} planId - Plan ID (starter, growth, scale)
+ * @param {Object} userInfo - User info (email, fullName, etc.)
+ * @returns {Object} Provisioning result
+ */
+async function provisionIrelandUser(userId, planId, userInfo = {}) {
+  const planLimits = getPlanLimits(planId);
+  const numbersToProvision = planLimits.phoneNumbers;
+  const results = [];
+  let assistant = null;
+
+  const voiceProvider = getVoiceProvider();
+
+  console.log(`[Ireland Provisioning] Starting for user ${userId}, plan ${planId}`);
+  console.log(`[Ireland Provisioning] Numbers to provision: ${numbersToProvision}`);
+
+  try {
+    // 1. Create or get AI assistant for user
+    assistant = await getUserAssistant(userId);
+
+    if (!assistant) {
+      console.log(`[Ireland Provisioning] Creating new assistant for user ${userId}`);
+      const { dbAssistant } = await createAssistantForUser(userId, {
+        businessName: userInfo.businessName || '',
+        businessDescription: userInfo.businessDescription || '',
+        greetingName: userInfo.greetingName || 'your AI assistant',
+        planId
+      });
+      assistant = dbAssistant;
+    }
+
+    // 2. Assign numbers from the pool
+    for (let i = 0; i < numbersToProvision; i++) {
+      try {
+        // Check for available number in pool
+        const availableNumber = await numberPool.getAvailableNumber('IE');
+
+        if (!availableNumber) {
+          console.error(`[Ireland Provisioning] No available numbers in Ireland pool`);
+          throw new Error('No available phone numbers in Ireland region. Please contact support.');
+        }
+
+        // Assign the number to this user
+        const assignResult = await numberPool.assignNumber(userId, availableNumber.id);
+
+        // If number doesn't have a Vapi ID yet, import it now
+        let vapiPhoneId = assignResult.vapiPhoneId;
+
+        if (!vapiPhoneId && assistant?.vapi_assistant_id) {
+          try {
+            // Import to Vapi using voipcloud credential
+            const vapiNumber = await voiceProvider.importPhoneNumber(
+              assignResult.poolNumber.phone_number,
+              'voipcloud',
+              {
+                name: `Ireland-${userId.slice(0, 8)}`,
+                assistantId: assistant.vapi_assistant_id
+              }
+            );
+            vapiPhoneId = vapiNumber.id;
+
+            // Update pool record with Vapi ID
+            await supabaseAdmin
+              .from('phone_number_pool')
+              .update({ vapi_phone_id: vapiPhoneId })
+              .eq('id', availableNumber.id);
+
+            // Update user_phone_numbers record with Vapi ID
+            await supabaseAdmin
+              .from('user_phone_numbers')
+              .update({ vapi_id: vapiPhoneId })
+              .eq('id', assignResult.userPhone.id);
+
+            console.log(`[Ireland Provisioning] Imported ${assignResult.poolNumber.phone_number} to Vapi: ${vapiPhoneId}`);
+          } catch (vapiError) {
+            console.error(`[Ireland Provisioning] Failed to import to Vapi:`, vapiError.message);
+            // Continue - number is still assigned, Vapi import can be done manually
+          }
+        }
+
+        // Assign assistant to this phone number in Vapi
+        if (vapiPhoneId && assistant?.vapi_assistant_id) {
+          try {
+            await assignAssistantToNumber(vapiPhoneId, assistant.vapi_assistant_id);
+          } catch (assignError) {
+            console.error(`[Ireland Provisioning] Failed to assign assistant:`, assignError.message);
+          }
+        }
+
+        results.push({
+          phoneNumber: assignResult.poolNumber.phone_number,
+          poolId: assignResult.poolNumber.id,
+          vapiId: vapiPhoneId,
+          userPhoneId: assignResult.userPhone.id,
+          assistantId: assistant?.vapi_assistant_id
+        });
+
+        console.log(`[Ireland Provisioning] Assigned ${assignResult.poolNumber.phone_number} to user ${userId}`);
+      } catch (numberError) {
+        console.error(`[Ireland Provisioning] Failed to assign number ${i + 1}:`, numberError.message);
+        // If this is the first number and it failed, throw to trigger retry
+        if (i === 0 && results.length === 0) {
+          throw numberError;
+        }
+        // Otherwise continue with remaining numbers
+      }
+    }
+
+    const result = {
+      success: results.length > 0,
+      provisioned: results.length,
+      requested: numbersToProvision,
+      numbers: results,
+      phoneNumber: results[0]?.phoneNumber,
+      assistant: {
+        id: assistant?.id,
+        vapiId: assistant?.vapi_assistant_id
+      }
+    };
+
+    console.log(`[Ireland Provisioning] Completed: ${results.length}/${numbersToProvision} numbers provisioned`);
+    return result;
+  } catch (error) {
+    console.error('[Ireland Provisioning] Provisioning failed:', error);
+    throw error;
+  }
+}
+
 module.exports = {
   provisionUserPhoneNumbers,
+  provisionIrelandUser,
   searchTelnyxNumbers,
   purchaseTelnyxNumbers,
   importToVapi,

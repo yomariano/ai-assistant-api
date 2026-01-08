@@ -183,6 +183,15 @@ class VapiProvider {
       } else {
         console.warn('[Vapi] No VAPI_TELNYX_CREDENTIAL_ID set - import may fail');
       }
+    } else if (provider === 'voipcloud' || provider === 'byo-sip-trunk') {
+      // VoIPCloud uses custom SIP trunk (byo-sip-trunk in Vapi)
+      const credentialId = options.credentialId || process.env.VAPI_VOIPCLOUD_CREDENTIAL_ID;
+      if (credentialId) {
+        payload.provider = 'byo-sip-trunk';
+        payload.credentialId = credentialId;
+      } else {
+        console.warn('[Vapi] No VAPI_VOIPCLOUD_CREDENTIAL_ID set - import may fail');
+      }
     }
 
     if (options.assistantId) {

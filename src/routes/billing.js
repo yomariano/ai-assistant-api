@@ -640,7 +640,192 @@ router.post('/test/reset-user', async (req, res, next) => {
       .delete()
       .eq('user_id', userId);
 
+    // Delete phone numbers
+    await supabaseAdmin
+      .from('user_phone_numbers')
+      .delete()
+      .eq('user_id', userId);
+
+    // Delete assistants
+    await supabaseAdmin
+      .from('user_assistants')
+      .delete()
+      .eq('user_id', userId);
+
+    // Release pool numbers assigned to this user
+    await supabaseAdmin
+      .from('phone_number_pool')
+      .update({
+        status: 'available',
+        assigned_to: null,
+        assigned_at: null,
+        reserved_at: null,
+        reserved_until: null
+      })
+      .eq('assigned_to', userId);
+
+    // Delete number assignment history
+    await supabaseAdmin
+      .from('number_assignment_history')
+      .delete()
+      .eq('user_id', userId);
+
     res.json({ success: true, message: 'User reset complete' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/billing/test/simulate-ireland-checkout
+ * Simulate an Ireland (EUR) checkout with full provisioning
+ * This triggers the number pool assignment flow
+ */
+router.post('/test/simulate-ireland-checkout', async (req, res, next) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  try {
+    const { userId, planId = 'starter', email, fullName } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    // Create subscription first
+    const customerId = `cus_ireland_test_${Date.now()}`;
+    const subscriptionId = `sub_ireland_test_${Date.now()}`;
+
+    const { error: subError } = await supabaseAdmin
+      .from('user_subscriptions')
+      .upsert({
+        user_id: userId,
+        plan_id: planId,
+        status: 'active',
+        stripe_customer_id: customerId,
+        stripe_subscription_id: subscriptionId,
+        current_period_start: new Date().toISOString(),
+        current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      }, {
+        onConflict: 'user_id'
+      });
+
+    if (subError) throw subError;
+
+    // Trigger Ireland provisioning
+    const { provisionIrelandUser } = require('../services/provisioning');
+
+    const result = await provisionIrelandUser(userId, planId, {
+      email: email || 'test@example.com',
+      fullName: fullName || 'Test User'
+    });
+
+    res.json({
+      success: true,
+      message: `Ireland provisioning complete for ${planId} plan`,
+      provisioning: result,
+      subscription: {
+        customerId,
+        subscriptionId,
+        planId
+      }
+    });
+  } catch (error) {
+    console.error('[Test] Ireland checkout simulation failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      details: error.stack
+    });
+  }
+});
+
+/**
+ * POST /api/billing/test/release-pool-number
+ * Release a pool number back to available (for testing)
+ */
+router.post('/test/release-pool-number', async (req, res, next) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  try {
+    const { userId } = req.body;
+
+    // Find assigned pool number
+    const { data: poolNumber } = await supabaseAdmin
+      .from('phone_number_pool')
+      .select('*')
+      .eq('assigned_to', userId)
+      .single();
+
+    if (!poolNumber) {
+      // Try to find any assigned number and release it
+      const { data: anyAssigned } = await supabaseAdmin
+        .from('phone_number_pool')
+        .select('*')
+        .eq('status', 'assigned')
+        .limit(1)
+        .single();
+
+      if (anyAssigned) {
+        await supabaseAdmin
+          .from('phone_number_pool')
+          .update({
+            status: 'available',
+            assigned_to: null,
+            assigned_at: null
+          })
+          .eq('id', anyAssigned.id);
+
+        // Also clean up user_phone_numbers
+        await supabaseAdmin
+          .from('user_phone_numbers')
+          .delete()
+          .eq('pool_number_id', anyAssigned.id);
+
+        return res.json({ success: true, released: anyAssigned.phone_number });
+      }
+
+      return res.json({ success: false, message: 'No assigned numbers found' });
+    }
+
+    // Release the number
+    await supabaseAdmin
+      .from('phone_number_pool')
+      .update({
+        status: 'available',
+        assigned_to: null,
+        assigned_at: null
+      })
+      .eq('id', poolNumber.id);
+
+    // Clean up user_phone_numbers
+    await supabaseAdmin
+      .from('user_phone_numbers')
+      .delete()
+      .eq('pool_number_id', poolNumber.id);
+
+    res.json({ success: true, released: poolNumber.phone_number });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/billing/pool-stats
+ * Get number pool statistics (for admin/testing)
+ */
+router.get('/pool-stats', async (req, res, next) => {
+  if (process.env.NODE_ENV === 'production' && !req.headers['x-admin-key']) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  try {
+    const numberPool = require('../services/numberPool');
+    const stats = await numberPool.getPoolStats();
+    res.json(stats);
   } catch (error) {
     next(error);
   }

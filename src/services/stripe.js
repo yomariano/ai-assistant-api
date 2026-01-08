@@ -30,6 +30,15 @@ function getEmailService() {
   return emailService;
 }
 
+// Lazy load number pool service for Ireland provisioning
+let numberPoolService = null;
+function getNumberPoolService() {
+  if (!numberPoolService) {
+    numberPoolService = require('./numberPool');
+  }
+  return numberPoolService;
+}
+
 // Payment Links - create these in Stripe Dashboard and add URLs to .env
 // Pass ?client_reference_id={userId} when redirecting users
 const PAYMENT_LINKS = {
@@ -242,27 +251,62 @@ async function handleCheckoutCompleted(session) {
   const isIrelandSubscription = currency === 'eur';
 
   if (isIrelandSubscription) {
-    // Send email to support for manual VoIPCloud provisioning
-    console.log(`[Stripe] Ireland subscription detected - sending support notification`);
-    const { notifyIrelandSubscription } = getNotificationService();
+    console.log(`[Stripe] Ireland subscription detected - provisioning from VoIPCloud number pool`);
 
-    try {
-      await notifyIrelandSubscription({
-        userId,
-        userEmail: user?.email,
-        userName: user?.full_name,
-        planId,
-        stripeCustomerId: customerId,
-        stripeSubscriptionId: subscriptionId,
-        phoneNumbersRequired: PLAN_LIMITS[planId]?.phoneNumbers || 1,
-      });
-    } catch (notifyError) {
-      console.error('[Stripe] Failed to send Ireland subscription notification:', notifyError);
-      // Don't throw - notification failure shouldn't block subscription
-    }
+    // Provision Ireland phone numbers from the pool (async, non-blocking)
+    setImmediate(async () => {
+      try {
+        const { provisionIrelandUser } = getProvisioningService();
+        const result = await provisionIrelandUser(userId, planId, {
+          email: user?.email,
+          fullName: user?.full_name,
+        });
+        console.log(`[Stripe] Ireland provisioning completed for user ${userId}:`, result);
 
-    // For Ireland, we don't auto-provision - manual process via VoIPCloud
-    console.log(`[Stripe] Ireland subscription - awaiting manual VoIPCloud provisioning`);
+        // Send success notification
+        const { notifyIrelandSubscription } = getNotificationService();
+        await notifyIrelandSubscription({
+          userId,
+          userEmail: user?.email,
+          userName: user?.full_name,
+          planId,
+          stripeCustomerId: customerId,
+          stripeSubscriptionId: subscriptionId,
+          phoneNumbersRequired: PLAN_LIMITS[planId]?.phoneNumbers || 1,
+          phoneNumber: result?.phoneNumber,
+          status: 'provisioned',
+        });
+      } catch (provisionError) {
+        console.error(`[Stripe] Ireland provisioning failed for user ${userId}:`, provisionError);
+
+        // Notify support about the failure
+        const { notifyIrelandSubscription } = getNotificationService();
+        await notifyIrelandSubscription({
+          userId,
+          userEmail: user?.email,
+          userName: user?.full_name,
+          planId,
+          stripeCustomerId: customerId,
+          stripeSubscriptionId: subscriptionId,
+          phoneNumbersRequired: PLAN_LIMITS[planId]?.phoneNumbers || 1,
+          status: 'failed',
+          error: provisionError.message,
+        });
+
+        // Queue for retry
+        await supabaseAdmin.from('provisioning_queue').insert({
+          user_id: userId,
+          plan_id: planId,
+          numbers_requested: PLAN_LIMITS[planId]?.phoneNumbers || 1,
+          status: 'failed',
+          error_message: provisionError.message,
+          region: 'IE',
+          attempts: 1,
+          last_attempt_at: new Date().toISOString()
+        });
+      }
+    });
+
     return;
   }
 

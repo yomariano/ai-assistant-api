@@ -89,7 +89,7 @@ async function reserveNumber(userId, region = 'IE', reserveMinutes = 15) {
  * @returns {Object} Assigned number
  */
 async function assignNumber(userId, poolNumberId = null) {
-  let query = supabaseAdmin.from('phone_number_pool');
+  let query = supabaseAdmin.from('phone_number_pool').select('*');
 
   if (poolNumberId) {
     query = query.eq('id', poolNumberId);
@@ -142,8 +142,7 @@ async function assignNumber(userId, poolNumberId = null) {
     .insert({
       user_id: userId,
       phone_number: poolNumber.phone_number,
-      provider: 'voipcloud',
-      vapi_phone_id: vapiPhoneId,
+      vapi_id: vapiPhoneId,
       pool_number_id: poolNumber.id,
       region: poolNumber.region,
       status: 'active',
