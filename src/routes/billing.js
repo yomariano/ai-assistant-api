@@ -16,7 +16,9 @@ const {
   getPlanLimits,
   getOverageRate,
   PLAN_LIMITS,
-  PAYMENT_LINKS
+  PAYMENT_LINKS,
+  STRIPE_WEBHOOK_SECRET,
+  STRIPE_MODE
 } = require('../services/stripe');
 const {
   detectRegion,
@@ -279,10 +281,12 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
   let event;
 
   try {
+    // Use mode-aware webhook secret
+    const webhookSecret = STRIPE_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET;
     event = stripe.webhooks.constructEvent(
       req.body,
       sig,
-      process.env.STRIPE_WEBHOOK_SECRET
+      webhookSecret
     );
   } catch (err) {
     console.error('Webhook signature verification failed:', err.message);

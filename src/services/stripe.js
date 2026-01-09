@@ -1,7 +1,19 @@
 const Stripe = require('stripe');
 const { supabaseAdmin } = require('./supabase');
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+// Determine Stripe mode from environment
+const STRIPE_MODE = process.env.STRIPE_MODE || 'test';
+const isLiveMode = STRIPE_MODE === 'live';
+
+// Get the appropriate secret key based on mode
+const STRIPE_SECRET_KEY = isLiveMode
+  ? process.env.STRIPE_LIVE_SECRET_KEY
+  : process.env.STRIPE_TEST_SECRET_KEY;
+
+// Fallback to legacy STRIPE_SECRET_KEY if mode-specific keys not set
+const stripe = new Stripe(STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY);
+
+console.log(`[Stripe] Initialized in ${STRIPE_MODE.toUpperCase()} mode`);
 
 // Lazy load provisioning to avoid circular dependency
 let provisioningService = null;
@@ -39,28 +51,41 @@ function getNumberPoolService() {
   return numberPoolService;
 }
 
-// Payment Links - create these in Stripe Dashboard and add URLs to .env
+// Payment Links - mode-specific
 // Pass ?client_reference_id={userId} when redirecting users
 const PAYMENT_LINKS = {
-  starter: process.env.STRIPE_PAYMENT_LINK_STARTER,
-  growth: process.env.STRIPE_PAYMENT_LINK_GROWTH,
-  scale: process.env.STRIPE_PAYMENT_LINK_SCALE
+  starter: isLiveMode
+    ? process.env.STRIPE_LIVE_PAYMENT_LINK_STARTER
+    : process.env.STRIPE_TEST_PAYMENT_LINK_STARTER,
+  growth: isLiveMode
+    ? process.env.STRIPE_LIVE_PAYMENT_LINK_GROWTH
+    : process.env.STRIPE_TEST_PAYMENT_LINK_GROWTH,
+  scale: isLiveMode
+    ? process.env.STRIPE_LIVE_PAYMENT_LINK_SCALE
+    : process.env.STRIPE_TEST_PAYMENT_LINK_SCALE,
 };
 
-// Map Stripe Price IDs to plan IDs (supports both EUR and USD prices)
+// Get price IDs based on mode
+const getModePriceId = (testPrice, livePrice) => isLiveMode ? livePrice : testPrice;
+
+// Map Stripe Price IDs to plan IDs (supports both EUR and USD, test and live)
 const PRICE_TO_PLAN = {
-  // EUR prices (OrderBot Ireland)
-  [process.env.STRIPE_STARTER_PRICE_EUR]: 'starter',
-  [process.env.STRIPE_GROWTH_PRICE_EUR]: 'growth',
-  [process.env.STRIPE_SCALE_PRICE_EUR]: 'scale',
-  // USD prices (US market)
+  // EUR prices - Test Mode
+  [process.env.STRIPE_TEST_STARTER_PRICE_EUR]: 'starter',
+  [process.env.STRIPE_TEST_GROWTH_PRICE_EUR]: 'growth',
+  [process.env.STRIPE_TEST_SCALE_PRICE_EUR]: 'scale',
+  // EUR prices - Live Mode
+  [process.env.STRIPE_LIVE_STARTER_PRICE_EUR]: 'starter',
+  [process.env.STRIPE_LIVE_GROWTH_PRICE_EUR]: 'growth',
+  [process.env.STRIPE_LIVE_SCALE_PRICE_EUR]: 'scale',
+  // USD prices (US market) - if needed
   [process.env.STRIPE_STARTER_PRICE_USD]: 'starter',
   [process.env.STRIPE_GROWTH_PRICE_USD]: 'growth',
   [process.env.STRIPE_SCALE_PRICE_USD]: 'scale',
-  // Legacy (deprecated)
-  [process.env.STRIPE_STARTER_PRICE_ID]: 'starter',
-  [process.env.STRIPE_GROWTH_PRICE_ID]: 'growth',
-  [process.env.STRIPE_SCALE_PRICE_ID]: 'scale'
+  // Legacy (deprecated) - for backwards compatibility
+  [process.env.STRIPE_STARTER_PRICE_EUR]: 'starter',
+  [process.env.STRIPE_GROWTH_PRICE_EUR]: 'growth',
+  [process.env.STRIPE_SCALE_PRICE_EUR]: 'scale',
 };
 
 // OrderBot Plan pricing (in cents) - EUR
@@ -689,6 +714,11 @@ function getOverageRate(planId) {
   return OVERAGE_RATES[planId] || OVERAGE_RATES.starter;
 }
 
+// Get the appropriate webhook secret based on mode
+const STRIPE_WEBHOOK_SECRET = isLiveMode
+  ? process.env.STRIPE_LIVE_WEBHOOK_SECRET
+  : process.env.STRIPE_TEST_WEBHOOK_SECRET;
+
 module.exports = {
   stripe,
   getOrCreateCustomer,
@@ -707,5 +737,8 @@ module.exports = {
   getOverageRate,
   PLAN_LIMITS,
   OVERAGE_RATES,
-  PAYMENT_LINKS
+  PAYMENT_LINKS,
+  STRIPE_MODE,
+  isLiveMode,
+  STRIPE_WEBHOOK_SECRET
 };
