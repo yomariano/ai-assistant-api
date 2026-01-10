@@ -15,6 +15,57 @@ const stripe = new Stripe(STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY);
 
 console.log(`[Stripe] Initialized in ${STRIPE_MODE.toUpperCase()} mode`);
 
+// Track if billing portal is configured
+let portalConfigured = null;
+
+/**
+ * Ensure the billing portal configuration exists
+ * Creates a default configuration if none exists
+ */
+async function ensureBillingPortalConfig() {
+  if (portalConfigured !== null) {
+    return portalConfigured;
+  }
+
+  try {
+    // Check if a configuration already exists
+    const configs = await stripe.billingPortal.configurations.list({ limit: 1 });
+
+    if (configs.data.length > 0) {
+      portalConfigured = true;
+      console.log('[Stripe] Billing portal configuration found');
+      return true;
+    }
+
+    // Create a default configuration
+    console.log('[Stripe] Creating default billing portal configuration...');
+    await stripe.billingPortal.configurations.create({
+      business_profile: {
+        headline: 'Manage your subscription',
+      },
+      features: {
+        subscription_cancel: { enabled: true, mode: 'at_period_end' },
+        subscription_update: {
+          enabled: true,
+          default_allowed_updates: ['price', 'quantity'],
+          proration_behavior: 'create_prorations'
+        },
+        payment_method_update: { enabled: true },
+        invoice_history: { enabled: true }
+      },
+      default_return_url: `${process.env.FRONTEND_URL}/billing`
+    });
+
+    portalConfigured = true;
+    console.log('[Stripe] Billing portal configuration created');
+    return true;
+  } catch (error) {
+    console.error('[Stripe] Failed to configure billing portal:', error.message);
+    portalConfigured = false;
+    return false;
+  }
+}
+
 // Lazy load provisioning to avoid circular dependency
 let provisioningService = null;
 function getProvisioningService() {
@@ -366,12 +417,33 @@ async function createPortalSession(user) {
     throw new Error('User has no Stripe customer');
   }
 
-  const session = await stripe.billingPortal.sessions.create({
-    customer: user.stripe_customer_id,
-    return_url: `${process.env.FRONTEND_URL}/settings`
-  });
+  try {
+    // Ensure billing portal is configured
+    await ensureBillingPortalConfig();
 
-  return session;
+    console.log(`[Stripe] Creating portal session for customer: ${user.stripe_customer_id}`);
+    const session = await stripe.billingPortal.sessions.create({
+      customer: user.stripe_customer_id,
+      return_url: `${process.env.FRONTEND_URL}/billing`
+    });
+    return session;
+  } catch (error) {
+    console.error(`[Stripe] Portal session error:`, {
+      code: error.code,
+      type: error.type,
+      message: error.message,
+      customerId: user.stripe_customer_id
+    });
+
+    // Provide more specific error messages
+    if (error.code === 'resource_missing' && error.message.includes('customer')) {
+      throw new Error('Stripe customer not found. The customer may have been deleted.');
+    }
+    if (error.type === 'invalid_request_error' && error.message.includes('portal')) {
+      throw new Error('Billing portal not configured. Please configure the Customer Portal in your Stripe Dashboard.');
+    }
+    throw error;
+  }
 }
 
 /**
@@ -725,6 +797,7 @@ module.exports = {
   getPaymentLink,
   handleCheckoutCompleted,
   createPortalSession,
+  ensureBillingPortalConfig,
   handleSubscriptionChange,
   handleSubscriptionDeleted,
   handleInvoicePaymentFailed,

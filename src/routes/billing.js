@@ -190,6 +190,77 @@ router.get('/payment-links', authenticate, async (req, res, next) => {
 });
 
 /**
+ * GET /api/billing/redirect
+ * Determine where to redirect user based on subscription status
+ * - New users (no subscription) → Payment Link URL
+ * - Existing subscribers → Customer Portal URL
+ */
+router.get('/redirect', authenticate, async (req, res, next) => {
+  try {
+    const { planId } = req.query;
+
+    // Check if user has an existing subscription
+    const existingSubscription = await getSubscription(req.userId);
+    const hasActiveSubscription = existingSubscription &&
+      ['active', 'trialing'].includes(existingSubscription.status);
+
+    if (hasActiveSubscription) {
+      // Existing subscriber - redirect to portal for upgrades/management
+      // Get customer ID from subscription or user
+      let stripeCustomerId = existingSubscription.stripe_customer_id;
+
+      if (!stripeCustomerId) {
+        const { data: subscription } = await supabaseAdmin
+          .from('user_subscriptions')
+          .select('stripe_customer_id')
+          .eq('user_id', req.userId)
+          .single();
+        stripeCustomerId = subscription?.stripe_customer_id;
+      }
+
+      if (!stripeCustomerId) {
+        return res.status(400).json({
+          error: { message: 'No billing account found. Please contact support.' }
+        });
+      }
+
+      // Create portal session
+      const session = await createPortalSession({ stripe_customer_id: stripeCustomerId });
+
+      return res.json({
+        type: 'portal',
+        url: session.url,
+        currentPlan: existingSubscription.plan_id,
+        message: 'You have an existing subscription. Use the portal to manage or change your plan.'
+      });
+    }
+
+    // New user - redirect to payment link
+    if (!planId || !['starter', 'growth', 'scale'].includes(planId)) {
+      // No plan specified, return info only
+      return res.json({
+        type: 'none',
+        hasSubscription: false,
+        message: 'No active subscription. Choose a plan to get started.'
+      });
+    }
+
+    // Get payment link for the requested plan
+    const url = getPaymentLink(planId, req.userId);
+
+    return res.json({
+      type: 'payment',
+      url,
+      planId,
+      message: 'Redirecting to checkout...'
+    });
+  } catch (error) {
+    console.error('[Billing] Redirect error:', error);
+    next(error);
+  }
+});
+
+/**
  * POST /api/billing/portal
  * Create a Stripe customer portal session
  */
