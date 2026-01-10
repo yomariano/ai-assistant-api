@@ -33,6 +33,36 @@ router.get('/blog', async (req, res) => {
   }
 });
 
+// GET /api/content/blog/related - Get related blog posts
+router.get('/blog/related', async (req, res) => {
+  try {
+    const { exclude, category, limit = 3 } = req.query;
+
+    let query = supabase
+      .from('blog_posts')
+      .select('id, slug, title, excerpt, featured_image_url, featured_image_alt, author_name, published_at')
+      .eq('status', 'published')
+      .limit(parseInt(limit));
+
+    if (exclude) {
+      query = query.neq('slug', exclude);
+    }
+
+    if (category) {
+      query = query.eq('category', category);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+
+    res.json(data || []);
+  } catch (error) {
+    console.error('Error fetching related blog posts:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch related blog posts' } });
+  }
+});
+
 // GET /api/content/blog/:slug - Get single blog post
 router.get('/blog/:slug', async (req, res) => {
   try {
@@ -129,6 +159,36 @@ router.get('/locations', async (req, res) => {
   }
 });
 
+// GET /api/content/locations/nearby - Get nearby locations by slugs
+router.get('/locations/nearby', async (req, res) => {
+  try {
+    const { slugs } = req.query;
+
+    if (!slugs) {
+      return res.json([]);
+    }
+
+    const slugArray = slugs.split(',').map(s => s.trim()).filter(Boolean);
+
+    if (!slugArray.length) {
+      return res.json([]);
+    }
+
+    const { data, error } = await supabase
+      .from('location_pages')
+      .select('slug, city_name, state_code')
+      .in('slug', slugArray)
+      .eq('status', 'published');
+
+    if (error) throw error;
+
+    res.json(data || []);
+  } catch (error) {
+    console.error('Error fetching nearby locations:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch nearby locations' } });
+  }
+});
+
 // GET /api/content/locations/:slug - Get single location page
 router.get('/locations/:slug', async (req, res) => {
   try {
@@ -170,6 +230,36 @@ router.get('/features', async (req, res) => {
   } catch (error) {
     console.error('Error fetching feature pages:', error);
     res.status(500).json({ error: { message: 'Failed to fetch feature pages' } });
+  }
+});
+
+// GET /api/content/features/by-slugs - Get features by slugs
+router.get('/features/by-slugs', async (req, res) => {
+  try {
+    const { slugs } = req.query;
+
+    if (!slugs) {
+      return res.json([]);
+    }
+
+    const slugArray = slugs.split(',').map(s => s.trim()).filter(Boolean);
+
+    if (!slugArray.length) {
+      return res.json([]);
+    }
+
+    const { data, error } = await supabase
+      .from('feature_pages')
+      .select('slug, feature_name, headline')
+      .in('slug', slugArray)
+      .eq('status', 'published');
+
+    if (error) throw error;
+
+    res.json(data || []);
+  } catch (error) {
+    console.error('Error fetching features by slugs:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch features' } });
   }
 });
 
@@ -227,6 +317,34 @@ router.get('/combo', async (req, res) => {
   } catch (error) {
     console.error('Error fetching combo pages:', error);
     res.status(500).json({ error: { message: 'Failed to fetch combo pages' } });
+  }
+});
+
+// GET /api/content/combo/related - Get related combo pages
+router.get('/combo/related', async (req, res) => {
+  try {
+    const { industry, location, limit = 6 } = req.query;
+
+    if (!industry || !location) {
+      return res.json([]);
+    }
+
+    // Get combos with same industry OR same location (excluding current)
+    const { data, error } = await supabase
+      .from('combo_pages')
+      .select('id, slug, location_slug, industry_slug, city_name, industry_name, headline, subheadline, published_at, updated_at')
+      .eq('status', 'published')
+      .or(`industry_slug.eq.${industry},location_slug.eq.${location}`)
+      .not('industry_slug', 'eq', industry)
+      .not('location_slug', 'eq', location)
+      .limit(parseInt(limit));
+
+    if (error) throw error;
+
+    res.json(data || []);
+  } catch (error) {
+    console.error('Error fetching related combos:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch related combos' } });
   }
 });
 
