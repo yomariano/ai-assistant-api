@@ -195,7 +195,21 @@ router.get('/payment-links', authenticate, async (req, res, next) => {
  */
 router.post('/portal', authenticate, async (req, res, next) => {
   try {
-    const session = await createPortalSession(req.user);
+    // If user doesn't have stripe_customer_id, look it up from user_subscriptions
+    let user = req.user;
+    if (!user.stripe_customer_id) {
+      const { data: subscription } = await supabaseAdmin
+        .from('user_subscriptions')
+        .select('stripe_customer_id')
+        .eq('user_id', req.userId)
+        .single();
+
+      if (subscription?.stripe_customer_id) {
+        user = { ...user, stripe_customer_id: subscription.stripe_customer_id };
+      }
+    }
+
+    const session = await createPortalSession(user);
     res.json({ url: session.url });
   } catch (error) {
     if (error.message === 'User has no Stripe customer') {
