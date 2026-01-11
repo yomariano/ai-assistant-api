@@ -5,7 +5,8 @@ const {
   getUserAssistant,
   updateAssistant,
   getAvailableVoices,
-  createAssistantForUser
+  createAssistantForUser,
+  recreateVapiAssistant
 } = require('../services/assistant');
 const { getSubscription, getPlanLimits } = require('../services/stripe');
 
@@ -180,6 +181,58 @@ router.post('/regenerate-prompt', authenticate, async (req, res, next) => {
 
     res.json({ systemPrompt });
   } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/assistant/test-config
+ * Get configuration needed for testing assistant via web call
+ */
+router.get('/test-config', authenticate, async (req, res, next) => {
+  try {
+    const assistant = await getUserAssistant(req.userId);
+
+    if (!assistant) {
+      return res.status(404).json({
+        error: { message: 'No assistant configured. Subscribe to a plan first.' }
+      });
+    }
+
+    if (!assistant.vapi_assistant_id) {
+      return res.status(400).json({
+        error: { message: 'Assistant not properly configured. Please contact support.' }
+      });
+    }
+
+    res.json({
+      vapiAssistantId: assistant.vapi_assistant_id,
+      assistantName: assistant.greeting_name || assistant.name || 'AI Assistant'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/assistant/recreate
+ * Recreate the VAPI assistant (useful when switching from mock to real provider)
+ */
+router.post('/recreate', authenticate, async (req, res, next) => {
+  try {
+    const result = await recreateVapiAssistant(req.userId);
+
+    res.json({
+      success: true,
+      message: 'Assistant recreated successfully',
+      vapiAssistantId: result.vapiAssistant.id
+    });
+  } catch (error) {
+    if (error.message === 'Assistant not found') {
+      return res.status(404).json({
+        error: { message: 'No assistant found. Subscribe to a plan first.' }
+      });
+    }
     next(error);
   }
 });

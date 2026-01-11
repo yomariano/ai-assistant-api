@@ -19,8 +19,8 @@ const DEFAULT_ASSISTANT_TEMPLATE = {
     maxTokens: 500
   },
   voice: {
-    provider: 'playht',
-    voiceId: 'jennifer' // Natural female voice
+    provider: 'vapi',
+    voiceId: 'Elliot' // Vapi native voice - natural conversational male
   },
   firstMessageMode: 'assistant-speaks-first',
   silenceTimeoutSeconds: 30,
@@ -32,26 +32,27 @@ const DEFAULT_ASSISTANT_TEMPLATE = {
 
 /**
  * Voice options by plan tier
+ * Using Vapi native voices for best compatibility
  */
 const VOICE_OPTIONS = {
   starter: [
-    { id: 'jennifer', provider: 'playht', name: 'Jennifer (Female)' },
-    { id: 'michael', provider: 'playht', name: 'Michael (Male)' }
+    { id: 'Elliot', provider: 'vapi', name: 'Elliot (Male, Conversational)' },
+    { id: 'Jessica', provider: 'vapi', name: 'Jessica (Female, Conversational)' }
   ],
   growth: [
-    { id: 'jennifer', provider: 'playht', name: 'Jennifer (Female)' },
-    { id: 'michael', provider: 'playht', name: 'Michael (Male)' },
-    { id: 'emma', provider: 'playht', name: 'Emma (Female, British)' },
-    { id: 'james', provider: 'playht', name: 'James (Male, British)' },
-    { id: 'custom', provider: 'playht', name: 'Custom Voice Clone' }
+    { id: 'Elliot', provider: 'vapi', name: 'Elliot (Male, Conversational)' },
+    { id: 'Jessica', provider: 'vapi', name: 'Jessica (Female, Conversational)' },
+    { id: 'Cole', provider: 'vapi', name: 'Cole (Male, Professional)' },
+    { id: 'Savannah', provider: 'vapi', name: 'Savannah (Female, Friendly)' },
+    { id: 'Ronan', provider: 'vapi', name: 'Ronan (Male, Warm)' }
   ],
   scale: [
-    { id: 'jennifer', provider: 'playht', name: 'Jennifer (Female)' },
-    { id: 'michael', provider: 'playht', name: 'Michael (Male)' },
-    { id: 'emma', provider: 'playht', name: 'Emma (Female, British)' },
-    { id: 'james', provider: 'playht', name: 'James (Male, British)' },
-    { id: 'custom', provider: 'playht', name: 'Custom Voice Clone' },
-    { id: 'elevenlabs-custom', provider: 'elevenlabs', name: 'ElevenLabs Custom' }
+    { id: 'Elliot', provider: 'vapi', name: 'Elliot (Male, Conversational)' },
+    { id: 'Jessica', provider: 'vapi', name: 'Jessica (Female, Conversational)' },
+    { id: 'Cole', provider: 'vapi', name: 'Cole (Male, Professional)' },
+    { id: 'Savannah', provider: 'vapi', name: 'Savannah (Female, Friendly)' },
+    { id: 'Ronan', provider: 'vapi', name: 'Ronan (Male, Warm)' },
+    { id: 'Lily', provider: 'vapi', name: 'Lily (Female, Natural)' }
   ]
 };
 
@@ -318,6 +319,84 @@ function getAvailableVoices(planId) {
 }
 
 /**
+ * Recreate the VAPI assistant with current settings
+ * Useful when switching from mock to real provider
+ */
+async function recreateVapiAssistant(userId) {
+  // Get current assistant from database
+  const { data: assistant, error: fetchError } = await supabaseAdmin
+    .from('user_assistants')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
+
+  if (fetchError || !assistant) {
+    throw new Error('Assistant not found');
+  }
+
+  // Get voice provider (will use real VAPI if configured correctly)
+  const voiceProvider = getVoiceProvider();
+  console.log(`[Assistant] Recreating assistant using ${voiceProvider.getName()} provider`);
+
+  // Get escalation settings if configured
+  let escalationSettings = null;
+  try {
+    escalationSettings = await getEscalationSettings(userId);
+  } catch (err) {
+    // No escalation settings, that's fine
+  }
+
+  // Check if the stored voice is valid (not old playht)
+  const storedVoiceProvider = assistant.voice_provider;
+  const storedVoiceId = assistant.voice_id;
+  const isValidVoice = storedVoiceProvider === 'vapi' && storedVoiceId;
+
+  // Build assistant config from current database values
+  const assistantConfig = {
+    ...DEFAULT_ASSISTANT_TEMPLATE,
+    name: `Assistant-${userId.slice(0, 8)}`,
+    firstMessage: assistant.first_message,
+    systemPrompt: assistant.system_prompt,
+    // Use stored voice if valid, otherwise use default
+    voice: isValidVoice ? {
+      provider: storedVoiceProvider,
+      voiceId: storedVoiceId
+    } : DEFAULT_ASSISTANT_TEMPLATE.voice,
+    ...(escalationSettings?.transfer_enabled && { escalationSettings }),
+  };
+
+  try {
+    // Create new assistant in VAPI
+    const vapiAssistant = await voiceProvider.createAssistant(assistantConfig);
+    console.log(`[Assistant] Created new VAPI assistant: ${vapiAssistant.id}`);
+
+    // Update database with new VAPI ID and voice settings
+    const { data: updatedAssistant, error } = await supabaseAdmin
+      .from('user_assistants')
+      .update({
+        vapi_assistant_id: vapiAssistant.id,
+        voice_provider: assistantConfig.voice.provider,
+        voice_id: assistantConfig.voice.voiceId,
+        last_synced_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', userId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return {
+      dbAssistant: updatedAssistant,
+      vapiAssistant
+    };
+  } catch (error) {
+    console.error('[Assistant] Failed to recreate VAPI assistant:', error.message);
+    throw error;
+  }
+}
+
+/**
  * Sync escalation settings to the Vapi assistant
  * Call this when escalation settings are updated
  */
@@ -366,5 +445,6 @@ module.exports = {
   getAvailableVoices,
   buildSystemPrompt,
   syncEscalationToAssistant,
+  recreateVapiAssistant,
   VOICE_OPTIONS
 };

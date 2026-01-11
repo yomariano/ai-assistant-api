@@ -83,11 +83,15 @@ class VapiProvider {
     }
 
     try {
+      console.log('[Vapi] Creating assistant with payload:', JSON.stringify(payload, null, 2));
       const response = await this.client.post('/assistant', payload);
       return this._mapAssistant(response.data);
     } catch (error) {
-      console.error('Vapi create assistant error:', error.response?.data || error.message);
-      throw new Error(`Failed to create assistant: ${error.message}`);
+      console.error('[Vapi] Create assistant error:');
+      console.error('  Status:', error.response?.status);
+      console.error('  Response:', JSON.stringify(error.response?.data, null, 2));
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message;
+      throw new Error(`Failed to create assistant: ${errorMessage}`);
     }
   }
 
