@@ -89,7 +89,8 @@ async function reserveNumber(userId, region = 'IE', reserveMinutes = 15) {
  * @param {string} poolNumberId - Pool number ID (optional, will find user's reserved number)
  * @returns {Object} Assigned number
  */
-async function assignNumber(userId, poolNumberId = null) {
+async function assignNumber(userId, poolNumberId = null, options = {}) {
+  const { vapiAssistantId = null } = options;
   let query = supabaseAdmin.from('phone_number_pool').select('*');
 
   if (poolNumberId) {
@@ -121,6 +122,7 @@ async function assignNumber(userId, poolNumberId = null) {
       const voiceProvider = getVoiceProvider();
       const vapiResult = await voiceProvider.importPhoneNumber(poolNumber.phone_number, 'voipcloud', {
         name: `Ireland-${poolNumber.phone_number.slice(-4)}`,
+        ...(vapiAssistantId ? { assistantId: vapiAssistantId } : {}),
       });
       vapiPhoneId = vapiResult.id;
     } catch (err) {

@@ -6,7 +6,8 @@ const {
   updateAssistant,
   getAvailableVoices,
   createAssistantForUser,
-  recreateVapiAssistant
+  recreateVapiAssistant,
+  syncUserPhoneNumbersToAssistant
 } = require('../services/assistant');
 const { getSubscription, getPlanLimits } = require('../services/stripe');
 
@@ -107,9 +108,14 @@ router.patch('/', authenticate, async (req, res, next) => {
       greetingName
     });
 
+    // Ensure all inbound phone numbers are linked to the user's current Vapi assistant
+    // (important if the assistant was recreated or if Vapi had a default assistant attached)
+    const phoneSync = await syncUserPhoneNumbersToAssistant(req.userId);
+
     res.json({
       success: true,
-      assistant: updatedAssistant
+      assistant: updatedAssistant,
+      phoneSync
     });
   } catch (error) {
     if (error.message === 'Assistant not found') {
@@ -221,11 +227,13 @@ router.get('/test-config', authenticate, async (req, res, next) => {
 router.post('/recreate', authenticate, async (req, res, next) => {
   try {
     const result = await recreateVapiAssistant(req.userId);
+    const phoneSync = await syncUserPhoneNumbersToAssistant(req.userId);
 
     res.json({
       success: true,
       message: 'Assistant recreated successfully',
-      vapiAssistantId: result.vapiAssistant.id
+      vapiAssistantId: result.vapiAssistant.id,
+      phoneSync
     });
   } catch (error) {
     if (error.message === 'Assistant not found') {

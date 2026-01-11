@@ -265,7 +265,9 @@ async function provisionIrelandUser(userId, planId, userInfo = {}) {
         // Prefer user's reserved number first (set during checkout), then fall back to any available number.
         let assignResult = null;
         try {
-          assignResult = await numberPool.assignNumber(userId);
+          assignResult = await numberPool.assignNumber(userId, null, {
+            vapiAssistantId: assistant?.vapi_assistant_id || null
+          });
         } catch (e) {
           // No reserved number found (or other error) -> fall back
         }
@@ -280,7 +282,9 @@ async function provisionIrelandUser(userId, planId, userInfo = {}) {
           }
 
           // Assign the number to this user
-          assignResult = await numberPool.assignNumber(userId, availableNumber.id);
+          assignResult = await numberPool.assignNumber(userId, availableNumber.id, {
+            vapiAssistantId: assistant?.vapi_assistant_id || null
+          });
         }
 
         // If number doesn't have a Vapi ID yet, import it now

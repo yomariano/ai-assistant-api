@@ -282,6 +282,70 @@ async function assignAssistantToNumber(vapiPhoneNumberId, vapiAssistantId) {
 }
 
 /**
+ * Ensure all of a user's active Vapi phone numbers are linked to the user's current Vapi assistant.
+ * This prevents stale phone-number -> assistant bindings when assistants are recreated or when Vapi
+ * had a default assistant attached.
+ */
+async function syncUserPhoneNumbersToAssistant(userId) {
+  const voiceProvider = getVoiceProvider();
+
+  let assistant = null;
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('user_assistants')
+      .select('id, vapi_assistant_id')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    assistant = data;
+  } catch (err) {
+    console.error('[Assistant] Failed to fetch assistant for phone sync:', err);
+    throw err;
+  }
+
+  if (!assistant?.vapi_assistant_id) {
+    return { synced: 0, total: 0, skipped: 0 };
+  }
+
+  let phones = [];
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('user_phone_numbers')
+      .select('id, vapi_id, phone_number, status')
+      .eq('user_id', userId)
+      .eq('status', 'active');
+    if (error) throw error;
+    phones = Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.error('[Assistant] Failed to fetch phone numbers for assistant sync:', err);
+    throw err;
+  }
+
+  let synced = 0;
+  let skipped = 0;
+
+  for (const phone of phones) {
+    if (!phone?.vapi_id) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      await voiceProvider.assignAssistantToNumber(phone.vapi_id, assistant.vapi_assistant_id);
+      synced += 1;
+    } catch (err) {
+      // Non-fatal: keep syncing remaining numbers
+      console.error(
+        `[Assistant] Failed to sync assistant to phone number ${phone.phone_number} (${phone.vapi_id}):`,
+        err.message || err
+      );
+    }
+  }
+
+  return { synced, total: phones.length, skipped };
+}
+
+/**
  * Delete assistant (when user cancels)
  */
 async function deleteAssistant(userId) {
@@ -446,5 +510,6 @@ module.exports = {
   buildSystemPrompt,
   syncEscalationToAssistant,
   recreateVapiAssistant,
+  syncUserPhoneNumbersToAssistant,
   VOICE_OPTIONS
 };

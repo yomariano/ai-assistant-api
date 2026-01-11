@@ -243,6 +243,24 @@ describe('Number Pool Service', () => {
       );
     });
 
+    it('should include assistantId when provided (prevents Vapi default assistant)', async () => {
+      supabaseAdmin.single
+        .mockResolvedValueOnce({ data: mockReserved, error: null })
+        .mockResolvedValueOnce({ data: {}, error: null })
+        .mockResolvedValueOnce({ data: { id: 'user-phone-123' }, error: null })
+        .mockResolvedValueOnce({ data: {}, error: null });
+
+      supabaseAdmin.update.mockReturnThis();
+
+      await assignNumber('user-123', null, { vapiAssistantId: 'assistant-123' });
+
+      expect(mockVoiceProvider.importPhoneNumber).toHaveBeenCalledWith(
+        '+35312655181',
+        'voipcloud',
+        expect.objectContaining({ assistantId: 'assistant-123' })
+      );
+    });
+
     it('should use existing VAPI phone ID if available', async () => {
       const alreadyImported = {
         ...mockReserved,
