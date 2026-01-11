@@ -32,26 +32,27 @@ const DEFAULT_ASSISTANT_TEMPLATE = {
 
 /**
  * Voice options by plan tier
- * Using Vapi native voices for best compatibility
+ * Using Vapi native voices - valid IDs: Elliot, Kylie, Rohan, Lily, Savannah,
+ * Hana, Neha, Cole, Harry, Paige, Spencer, Leah, Tara, Jess, Leo, Dan, Mia, Zac, Zoe
  */
 const VOICE_OPTIONS = {
   starter: [
     { id: 'Elliot', provider: 'vapi', name: 'Elliot (Male, Conversational)' },
-    { id: 'Jessica', provider: 'vapi', name: 'Jessica (Female, Conversational)' }
+    { id: 'Jess', provider: 'vapi', name: 'Jess (Female, Conversational)' }
   ],
   growth: [
     { id: 'Elliot', provider: 'vapi', name: 'Elliot (Male, Conversational)' },
-    { id: 'Jessica', provider: 'vapi', name: 'Jessica (Female, Conversational)' },
+    { id: 'Jess', provider: 'vapi', name: 'Jess (Female, Conversational)' },
     { id: 'Cole', provider: 'vapi', name: 'Cole (Male, Professional)' },
     { id: 'Savannah', provider: 'vapi', name: 'Savannah (Female, Friendly)' },
-    { id: 'Ronan', provider: 'vapi', name: 'Ronan (Male, Warm)' }
+    { id: 'Rohan', provider: 'vapi', name: 'Rohan (Male, Warm)' }
   ],
   scale: [
     { id: 'Elliot', provider: 'vapi', name: 'Elliot (Male, Conversational)' },
-    { id: 'Jessica', provider: 'vapi', name: 'Jessica (Female, Conversational)' },
+    { id: 'Jess', provider: 'vapi', name: 'Jess (Female, Conversational)' },
     { id: 'Cole', provider: 'vapi', name: 'Cole (Male, Professional)' },
     { id: 'Savannah', provider: 'vapi', name: 'Savannah (Female, Friendly)' },
-    { id: 'Ronan', provider: 'vapi', name: 'Ronan (Male, Warm)' },
+    { id: 'Rohan', provider: 'vapi', name: 'Rohan (Male, Warm)' },
     { id: 'Lily', provider: 'vapi', name: 'Lily (Female, Natural)' }
   ]
 };
@@ -247,6 +248,16 @@ async function updateAssistant(userId, updates) {
 
   if (error) throw error;
 
+  // Sync assistant to all phone numbers in VAPI
+  // This ensures phone numbers always point to the user's configured assistant
+  try {
+    const syncResult = await syncAssistantToPhoneNumbers(userId);
+    console.log(`[Assistant] Post-update phone sync: ${syncResult.synced} numbers synced`);
+  } catch (syncError) {
+    // Log but don't fail the update if sync fails
+    console.error('[Assistant] Post-update phone sync failed:', syncError.message);
+  }
+
   return updatedAssistant;
 }
 
@@ -282,108 +293,78 @@ async function assignAssistantToNumber(vapiPhoneNumberId, vapiAssistantId) {
 }
 
 /**
- * Ensure all of a user's active Vapi phone numbers are linked to the user's current Vapi assistant.
- * This prevents stale phone-number -> assistant bindings when assistants are recreated or when Vapi
- * had a default assistant attached.
+ * Sync assistant to all user's phone numbers in VAPI
+ * This ensures all phone numbers point to the user's configured assistant
  */
-async function syncUserPhoneNumbersToAssistant(userId) {
+async function syncAssistantToPhoneNumbers(userId) {
   const voiceProvider = getVoiceProvider();
 
-  let assistant = null;
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('user_assistants')
-      .select('id, vapi_assistant_id')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .single();
-    if (error && error.code !== 'PGRST116') throw error;
-    assistant = data;
-  } catch (err) {
-    console.error('[Assistant] Failed to fetch assistant for phone sync:', err);
-    throw err;
+  // Get user's assistant
+  const { data: assistant, error: assistantError } = await supabaseAdmin
+    .from('user_assistants')
+    .select('vapi_assistant_id')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .single();
+
+  if (assistantError || !assistant?.vapi_assistant_id) {
+    console.log(`[Assistant] No active assistant found for user ${userId}, skipping phone sync`);
+    return { synced: 0, errors: [] };
   }
 
-  if (!assistant?.vapi_assistant_id) {
-    return { synced: 0, total: 0, skipped: 0 };
+  // Get user's phone numbers (both regular and pool numbers)
+  const { data: phoneNumbers, error: phoneError } = await supabaseAdmin
+    .from('user_phone_numbers')
+    .select('id, phone_number, vapi_id')
+    .eq('user_id', userId)
+    .eq('status', 'active');
+
+  if (phoneError) {
+    console.error('[Assistant] Failed to fetch phone numbers:', phoneError.message);
+    throw phoneError;
   }
 
-  let phones = [];
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('user_phone_numbers')
-      .select('id, vapi_id, phone_number, status, pool_number_id, region')
-      .eq('user_id', userId)
-      .in('status', ['active', 'pending']);
-    if (error) throw error;
-    phones = Array.isArray(data) ? data : [];
-  } catch (err) {
-    console.error('[Assistant] Failed to fetch phone numbers for assistant sync:', err);
-    throw err;
+  if (!phoneNumbers || phoneNumbers.length === 0) {
+    console.log(`[Assistant] No phone numbers found for user ${userId}`);
+    return { synced: 0, errors: [] };
   }
 
-  // For pool-based numbers (Ireland), the Vapi phone ID may be stored on the pool record
-  // even if user_phone_numbers.vapi_id is missing (older flows or manual imports).
-  let poolVapiMap = {};
-  try {
-    const poolIds = phones
-      .map((p) => p.pool_number_id)
-      .filter((id) => typeof id === 'string' && id.length > 0);
+  const results = { synced: 0, errors: [] };
 
-    if (poolIds.length > 0) {
-      const { data, error } = await supabaseAdmin
-        .from('phone_number_pool')
-        .select('id, vapi_phone_id')
-        .in('id', poolIds);
-      if (error) throw error;
-      poolVapiMap = (Array.isArray(data) ? data : []).reduce((acc, row) => {
-        if (row?.id) acc[row.id] = row;
-        return acc;
-      }, {});
-    }
-  } catch (err) {
-    console.error('[Assistant] Failed to fetch pool numbers for assistant sync:', err);
-    // Non-fatal: we can still sync any phones that already have vapi_id
-  }
-
-  let synced = 0;
-  let skipped = 0;
-  let backfilled = 0;
-
-  for (const phone of phones) {
-    const resolvedVapiId =
-      phone?.vapi_id || (phone?.pool_number_id ? poolVapiMap[phone.pool_number_id]?.vapi_phone_id : null);
-
-    if (!resolvedVapiId) {
-      skipped += 1;
+  for (const phone of phoneNumbers) {
+    if (!phone.vapi_id) {
+      console.log(`[Assistant] Phone ${phone.phone_number} has no VAPI ID, skipping`);
+      results.errors.push({ phone: phone.phone_number, error: 'No VAPI ID' });
       continue;
     }
-    try {
-      await voiceProvider.assignAssistantToNumber(resolvedVapiId, assistant.vapi_assistant_id);
-      synced += 1;
-    } catch (err) {
-      // Non-fatal: keep syncing remaining numbers
-      console.error(
-        `[Assistant] Failed to sync assistant to phone number ${phone.phone_number} (${resolvedVapiId}):`,
-        err.message || err
-      );
-    }
 
-    // If we had to resolve via pool record, backfill user_phone_numbers.vapi_id for future operations
-    if (!phone?.vapi_id && resolvedVapiId) {
-      try {
-        const { error } = await supabaseAdmin
+    try {
+      await voiceProvider.assignAssistantToNumber(phone.vapi_id, assistant.vapi_assistant_id);
+      console.log(`[Assistant] Synced assistant to phone ${phone.phone_number} (${phone.vapi_id})`);
+      results.synced++;
+
+      // Update the assistant_id foreign key in user_phone_numbers if needed
+      const { data: assistantRecord } = await supabaseAdmin
+        .from('user_assistants')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .single();
+
+      if (assistantRecord) {
+        await supabaseAdmin
           .from('user_phone_numbers')
-          .update({ vapi_id: resolvedVapiId, updated_at: new Date().toISOString() })
+          .update({ assistant_id: assistantRecord.id })
           .eq('id', phone.id);
-        if (!error) backfilled += 1;
-      } catch (err) {
-        // Non-fatal
       }
+    } catch (error) {
+      console.error(`[Assistant] Failed to sync assistant to phone ${phone.phone_number}:`, error.message);
+      results.errors.push({ phone: phone.phone_number, error: error.message });
     }
   }
 
-  return { synced, total: phones.length, skipped, backfilled };
+  console.log(`[Assistant] Phone sync completed for user ${userId}: ${results.synced} synced, ${results.errors.length} errors`);
+  return results;
 }
 
 /**
@@ -491,6 +472,16 @@ async function recreateVapiAssistant(userId) {
 
     if (error) throw error;
 
+    // Sync the new assistant to all phone numbers
+    // This is critical because the assistant has a new VAPI ID
+    try {
+      const syncResult = await syncAssistantToPhoneNumbers(userId);
+      console.log(`[Assistant] Post-recreate phone sync: ${syncResult.synced} numbers synced`);
+    } catch (syncError) {
+      console.error('[Assistant] Post-recreate phone sync failed:', syncError.message);
+      // Don't fail the recreation, but log the error
+    }
+
     return {
       dbAssistant: updatedAssistant,
       vapiAssistant
@@ -546,11 +537,11 @@ module.exports = {
   updateAssistant,
   getUserAssistant,
   assignAssistantToNumber,
+  syncAssistantToPhoneNumbers,
   deleteAssistant,
   getAvailableVoices,
   buildSystemPrompt,
   syncEscalationToAssistant,
   recreateVapiAssistant,
-  syncUserPhoneNumbersToAssistant,
   VOICE_OPTIONS
 };

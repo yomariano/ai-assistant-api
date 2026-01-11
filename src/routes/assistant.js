@@ -7,7 +7,7 @@ const {
   getAvailableVoices,
   createAssistantForUser,
   recreateVapiAssistant,
-  syncUserPhoneNumbersToAssistant
+  syncAssistantToPhoneNumbers
 } = require('../services/assistant');
 const { getSubscription, getPlanLimits } = require('../services/stripe');
 
@@ -108,14 +108,9 @@ router.patch('/', authenticate, async (req, res, next) => {
       greetingName
     });
 
-    // Ensure all inbound phone numbers are linked to the user's current Vapi assistant
-    // (important if the assistant was recreated or if Vapi had a default assistant attached)
-    const phoneSync = await syncUserPhoneNumbersToAssistant(req.userId);
-
     res.json({
       success: true,
-      assistant: updatedAssistant,
-      phoneSync
+      assistant: updatedAssistant
     });
   } catch (error) {
     if (error.message === 'Assistant not found') {
@@ -227,13 +222,36 @@ router.get('/test-config', authenticate, async (req, res, next) => {
 router.post('/recreate', authenticate, async (req, res, next) => {
   try {
     const result = await recreateVapiAssistant(req.userId);
-    const phoneSync = await syncUserPhoneNumbersToAssistant(req.userId);
 
     res.json({
       success: true,
       message: 'Assistant recreated successfully',
-      vapiAssistantId: result.vapiAssistant.id,
-      phoneSync
+      vapiAssistantId: result.vapiAssistant.id
+    });
+  } catch (error) {
+    if (error.message === 'Assistant not found') {
+      return res.status(404).json({
+        error: { message: 'No assistant found. Subscribe to a plan first.' }
+      });
+    }
+    next(error);
+  }
+});
+
+/**
+ * POST /api/assistant/sync-phone-numbers
+ * Sync the assistant to all user's phone numbers in VAPI
+ * Ensures all phone numbers point to the user's configured assistant
+ */
+router.post('/sync-phone-numbers', authenticate, async (req, res, next) => {
+  try {
+    const result = await syncAssistantToPhoneNumbers(req.userId);
+
+    res.json({
+      success: result.synced > 0 || result.errors.length === 0,
+      message: `Synced ${result.synced} phone number(s)`,
+      synced: result.synced,
+      errors: result.errors
     });
   } catch (error) {
     if (error.message === 'Assistant not found') {
