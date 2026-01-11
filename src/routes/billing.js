@@ -28,6 +28,7 @@ const {
   getClientIp,
 } = require('../services/geoLocation');
 const usageTracking = require('../services/usageTracking');
+const numberPool = require('../services/numberPool');
 
 const router = express.Router();
 
@@ -140,6 +141,17 @@ router.get('/payment-link/:planId', authenticate, async (req, res, next) => {
     if (!region) {
       const clientIp = getClientIp(req);
       region = await detectRegion(clientIp);
+    }
+
+    // Ireland (VoIPCloud pool): reserve a number during checkout so we can show a real number
+    // immediately after purchase, even if provisioning is still running.
+    if (region === 'IE') {
+      try {
+        await numberPool.reserveNumber(req.userId, 'IE', 30);
+      } catch (reserveError) {
+        // Don't block checkout on reservation issues (pool may be empty, etc.)
+        console.warn('[Billing] Failed to reserve pool number during checkout:', reserveError?.message || reserveError);
+      }
     }
 
     // Try to get region-specific payment link first
@@ -546,9 +558,29 @@ router.get('/provisioning-status', authenticate, async (req, res, next) => {
       .eq('user_id', req.userId)
       .eq('status', 'active');
 
+    // Get reserved pool number (if any) for this user
+    let reserved = null;
+    try {
+      const { data: reservedRow, error: reservedError } = await supabaseAdmin
+        .from('phone_number_pool')
+        .select('phone_number, reserved_until, region')
+        .eq('assigned_to', req.userId)
+        .eq('status', 'reserved')
+        .order('reserved_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (!reservedError && reservedRow) {
+        reserved = reservedRow;
+      }
+    } catch (reservedQueryError) {
+      console.warn('[Billing] Failed to fetch reserved pool number:', reservedQueryError?.message || reservedQueryError);
+    }
+
     res.json({
       provisioning: queue || null,
       numbers: numbers || [],
+      reserved,
       isComplete: !queue || queue.status === 'completed',
       hasFailed: queue?.status === 'failed'
     });

@@ -216,6 +216,12 @@ describe('Number Pool Service', () => {
       const result = await assignNumber('user-123');
 
       expect(result.poolNumber).toBeDefined();
+      expect(supabaseAdmin.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'assigned',
+          assigned_to: 'user-123',
+        })
+      );
       expect(mockVoiceProvider.importPhoneNumber).toHaveBeenCalled();
     });
 

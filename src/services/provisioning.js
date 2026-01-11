@@ -262,16 +262,26 @@ async function provisionIrelandUser(userId, planId, userInfo = {}) {
     // 2. Assign numbers from the pool
     for (let i = 0; i < numbersToProvision; i++) {
       try {
-        // Check for available number in pool
-        const availableNumber = await numberPool.getAvailableNumber('IE');
-
-        if (!availableNumber) {
-          console.error(`[Ireland Provisioning] No available numbers in Ireland pool`);
-          throw new Error('No available phone numbers in Ireland region. Please contact support.');
+        // Prefer user's reserved number first (set during checkout), then fall back to any available number.
+        let assignResult = null;
+        try {
+          assignResult = await numberPool.assignNumber(userId);
+        } catch (e) {
+          // No reserved number found (or other error) -> fall back
         }
 
-        // Assign the number to this user
-        const assignResult = await numberPool.assignNumber(userId, availableNumber.id);
+        if (!assignResult) {
+          // Check for available number in pool
+          const availableNumber = await numberPool.getAvailableNumber('IE');
+
+          if (!availableNumber) {
+            console.error(`[Ireland Provisioning] No available numbers in Ireland pool`);
+            throw new Error('No available phone numbers in Ireland region. Please contact support.');
+          }
+
+          // Assign the number to this user
+          assignResult = await numberPool.assignNumber(userId, availableNumber.id);
+        }
 
         // If number doesn't have a Vapi ID yet, import it now
         let vapiPhoneId = assignResult.vapiPhoneId;

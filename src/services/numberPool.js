@@ -104,6 +104,14 @@ async function assignNumber(userId, poolNumberId = null) {
     throw new Error('No reserved number found for user');
   }
 
+  // Safety checks to avoid stealing numbers
+  if (poolNumber.status === 'assigned') {
+    throw new Error('Pool number is already assigned');
+  }
+  if (poolNumber.status === 'reserved' && poolNumber.assigned_to && poolNumber.assigned_to !== userId) {
+    throw new Error('Pool number is reserved for a different user');
+  }
+
   // Import to VAPI if not already
   let vapiPhoneId = poolNumber.vapi_phone_id;
 
@@ -125,6 +133,7 @@ async function assignNumber(userId, poolNumberId = null) {
     .from('phone_number_pool')
     .update({
       status: 'assigned',
+      assigned_to: userId,
       assigned_at: new Date().toISOString(),
       reserved_at: null,
       reserved_until: null,
