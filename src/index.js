@@ -18,6 +18,7 @@ const testHelpersRoutes = require('./routes/testHelpers');
 const notificationRoutes = require('./routes/notifications');
 const vapiWebhookRoutes = require('./routes/vapiWebhooks');
 const seoGenerationRoutes = require('./routes/seoGeneration');
+const integrationsRoutes = require('./routes/integrations');
 
 // Import scheduled jobs
 const { startScheduledCallsJob } = require('./jobs/scheduledCalls');
@@ -82,6 +83,7 @@ app.use('/api/billing/test', testHelpersRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/vapi', vapiWebhookRoutes);
 app.use('/api/seo', seoGenerationRoutes);
+app.use('/api/integrations', integrationsRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
