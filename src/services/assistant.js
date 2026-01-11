@@ -312,9 +312,9 @@ async function syncUserPhoneNumbersToAssistant(userId) {
   try {
     const { data, error } = await supabaseAdmin
       .from('user_phone_numbers')
-      .select('id, vapi_id, phone_number, status')
+      .select('id, vapi_id, phone_number, status, pool_number_id, region')
       .eq('user_id', userId)
-      .eq('status', 'active');
+      .in('status', ['active', 'pending']);
     if (error) throw error;
     phones = Array.isArray(data) ? data : [];
   } catch (err) {
@@ -322,27 +322,68 @@ async function syncUserPhoneNumbersToAssistant(userId) {
     throw err;
   }
 
+  // For pool-based numbers (Ireland), the Vapi phone ID may be stored on the pool record
+  // even if user_phone_numbers.vapi_id is missing (older flows or manual imports).
+  let poolVapiMap = {};
+  try {
+    const poolIds = phones
+      .map((p) => p.pool_number_id)
+      .filter((id) => typeof id === 'string' && id.length > 0);
+
+    if (poolIds.length > 0) {
+      const { data, error } = await supabaseAdmin
+        .from('phone_number_pool')
+        .select('id, vapi_phone_id')
+        .in('id', poolIds);
+      if (error) throw error;
+      poolVapiMap = (Array.isArray(data) ? data : []).reduce((acc, row) => {
+        if (row?.id) acc[row.id] = row;
+        return acc;
+      }, {});
+    }
+  } catch (err) {
+    console.error('[Assistant] Failed to fetch pool numbers for assistant sync:', err);
+    // Non-fatal: we can still sync any phones that already have vapi_id
+  }
+
   let synced = 0;
   let skipped = 0;
+  let backfilled = 0;
 
   for (const phone of phones) {
-    if (!phone?.vapi_id) {
+    const resolvedVapiId =
+      phone?.vapi_id || (phone?.pool_number_id ? poolVapiMap[phone.pool_number_id]?.vapi_phone_id : null);
+
+    if (!resolvedVapiId) {
       skipped += 1;
       continue;
     }
     try {
-      await voiceProvider.assignAssistantToNumber(phone.vapi_id, assistant.vapi_assistant_id);
+      await voiceProvider.assignAssistantToNumber(resolvedVapiId, assistant.vapi_assistant_id);
       synced += 1;
     } catch (err) {
       // Non-fatal: keep syncing remaining numbers
       console.error(
-        `[Assistant] Failed to sync assistant to phone number ${phone.phone_number} (${phone.vapi_id}):`,
+        `[Assistant] Failed to sync assistant to phone number ${phone.phone_number} (${resolvedVapiId}):`,
         err.message || err
       );
     }
+
+    // If we had to resolve via pool record, backfill user_phone_numbers.vapi_id for future operations
+    if (!phone?.vapi_id && resolvedVapiId) {
+      try {
+        const { error } = await supabaseAdmin
+          .from('user_phone_numbers')
+          .update({ vapi_id: resolvedVapiId, updated_at: new Date().toISOString() })
+          .eq('id', phone.id);
+        if (!error) backfilled += 1;
+      } catch (err) {
+        // Non-fatal
+      }
+    }
   }
 
-  return { synced, total: phones.length, skipped };
+  return { synced, total: phones.length, skipped, backfilled };
 }
 
 /**
