@@ -57,6 +57,7 @@ async function reserveNumber(userId, region = 'IE', reserveMinutes = 15) {
       assigned_to: userId,
       reserved_at: new Date().toISOString(),
       reserved_until: reserveUntil.toISOString(),
+      updated_at: new Date().toISOString(),
     })
     .eq('id', availableNumber.id)
     .eq('status', 'available')
@@ -138,6 +139,7 @@ async function assignNumber(userId, poolNumberId = null) {
       reserved_at: null,
       reserved_until: null,
       vapi_phone_id: vapiPhoneId,
+      updated_at: new Date().toISOString(),
     })
     .eq('id', poolNumber.id);
 
@@ -207,6 +209,9 @@ async function releaseNumber(userId, reason = 'Subscription cancelled') {
       status: 'released',
       assigned_to: null,
       assigned_at: null,
+      reserved_at: null,
+      reserved_until: null,
+      updated_at: new Date().toISOString(),
     })
     .eq('id', poolNumber.id);
 
@@ -256,6 +261,7 @@ async function cancelReservation(userId) {
       assigned_to: null,
       reserved_at: null,
       reserved_until: null,
+      updated_at: new Date().toISOString(),
     })
     .eq('id', poolNumber.id);
 
@@ -296,6 +302,7 @@ async function cleanupExpiredReservations() {
         assigned_to: null,
         reserved_at: null,
         reserved_until: null,
+        updated_at: new Date().toISOString(),
       })
       .eq('id', record.id);
 
@@ -325,7 +332,7 @@ async function recycleReleasedNumbers(cooldownHours = 24) {
 
   const { data, error } = await supabaseAdmin
     .from('phone_number_pool')
-    .update({ status: 'available' })
+    .update({ status: 'available', updated_at: new Date().toISOString() })
     .eq('status', 'released')
     .lt('updated_at', cutoff.toISOString())
     .select();
