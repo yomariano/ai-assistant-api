@@ -439,4 +439,54 @@ router.post('/generate/single', verifyWorkerSecret, async (req, res) => {
     }
 });
 
+/**
+ * POST /api/seo/proxy-claude
+ * Proxy Claude API requests from Cloudflare Worker (handles self-signed SSL)
+ */
+router.post('/proxy-claude', verifyWorkerSecret, async (req, res) => {
+    try {
+        const { prompt, model = 'haiku' } = req.body;
+
+        if (!prompt) {
+            return res.status(400).json({ error: 'prompt is required' });
+        }
+
+        const CLAUDE_API_URL = process.env.CLAUDE_API_URL || 'https://116.203.117.211:2086';
+        const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
+
+        if (!CLAUDE_API_KEY) {
+            return res.status(500).json({ error: 'CLAUDE_API_KEY not configured' });
+        }
+
+        // Use axios for better control over SSL certificate validation
+        const axios = require('axios');
+        const https = require('https');
+
+        const httpsAgent = new https.Agent({
+            rejectUnauthorized: false // Allow self-signed certificates
+        });
+
+        const response = await axios.post(
+            `${CLAUDE_API_URL}/v1/claude`,
+            { prompt, model },
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': CLAUDE_API_KEY
+                },
+                httpsAgent: CLAUDE_API_URL.startsWith('https') ? httpsAgent : undefined,
+                timeout: 60000
+            }
+        );
+
+        res.json(response.data);
+
+    } catch (error) {
+        console.error('Claude proxy error:', error.response?.data || error.message);
+        const status = error.response?.status || 500;
+        const message = error.response?.data?.error || error.message;
+        res.status(status).json({ error: message });
+    }
+});
+
 module.exports = router;
