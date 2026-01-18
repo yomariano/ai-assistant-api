@@ -21,6 +21,7 @@ const seoGenerationRoutes = require('./routes/seoGeneration');
 const integrationsRoutes = require('./routes/integrations');
 const providersRoutes = require('./routes/providers');
 const emailRoutes = require('./routes/email');
+const publicLiveDemoRoutes = require('./routes/publicLiveDemo');
 
 // Import scheduled jobs
 const { startScheduledCallsJob } = require('./jobs/scheduledCalls');
@@ -89,6 +90,7 @@ app.use('/api/seo', seoGenerationRoutes);
 app.use('/api/integrations', integrationsRoutes);
 app.use('/api/providers', providersRoutes);
 app.use('/api/email', emailRoutes);
+app.use('/api/public/live-demo', publicLiveDemoRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
