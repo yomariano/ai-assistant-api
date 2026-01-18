@@ -2,6 +2,39 @@ const express = require('express');
 const router = express.Router();
 const { supabase } = require('../services/supabase');
 
+const SITEMAP_CHUNK_SIZE = 1000;
+const SITEMAP_MAX_ROWS_PER_TYPE = 50000;
+
+async function fetchAllPublishedForSitemap({ table, select, orderBy, maxRows = SITEMAP_MAX_ROWS_PER_TYPE }) {
+  const allRows = [];
+  let offset = 0;
+
+  while (offset < maxRows) {
+    let query = supabase
+      .from(table)
+      .select(select)
+      .eq('status', 'published');
+
+    for (const order of orderBy) {
+      query = query.order(order.column, { ascending: order.ascending });
+    }
+
+    const { data, error } = await query.range(offset, offset + SITEMAP_CHUNK_SIZE - 1);
+
+    if (error) throw error;
+
+    allRows.push(...(data || []));
+
+    if (!data || data.length < SITEMAP_CHUNK_SIZE) {
+      break;
+    }
+
+    offset += SITEMAP_CHUNK_SIZE;
+  }
+
+  return allRows;
+}
+
 // GET /api/content/blog - List all published blog posts
 router.get('/blog', async (req, res) => {
   try {
@@ -378,41 +411,47 @@ router.get('/combo/:industry/:location', async (req, res) => {
 // GET /api/content/sitemap-data - Get all published content for sitemap
 router.get('/sitemap-data', async (req, res) => {
   try {
-    const [blogResult, useCaseResult, locationResult, featureResult, comboResult] = await Promise.all([
-      supabase
-        .from('blog_posts')
-        .select('slug, updated_at')
-        .eq('status', 'published'),
-      supabase
-        .from('use_case_pages')
-        .select('slug, updated_at')
-        .eq('status', 'published'),
-      supabase
-        .from('location_pages')
-        .select('slug, updated_at')
-        .eq('status', 'published'),
-      supabase
-        .from('feature_pages')
-        .select('slug, updated_at')
-        .eq('status', 'published'),
-      supabase
-        .from('combo_pages')
-        .select('industry_slug, location_slug, updated_at')
-        .eq('status', 'published'),
-    ]);
+    // Supabase can cap rows per request; page through results so the sitemap can include everything.
+    // Note: we cap at 50k per type to keep runtime reasonable (and align with sitemap best practices).
+    const blogPosts = await fetchAllPublishedForSitemap({
+      table: 'blog_posts',
+      select: 'slug, updated_at',
+      orderBy: [{ column: 'slug', ascending: true }],
+    });
 
-    if (blogResult.error) throw blogResult.error;
-    if (useCaseResult.error) throw useCaseResult.error;
-    if (locationResult.error) throw locationResult.error;
-    if (featureResult.error) throw featureResult.error;
-    if (comboResult.error) throw comboResult.error;
+    const useCases = await fetchAllPublishedForSitemap({
+      table: 'use_case_pages',
+      select: 'slug, updated_at',
+      orderBy: [{ column: 'slug', ascending: true }],
+    });
+
+    const locations = await fetchAllPublishedForSitemap({
+      table: 'location_pages',
+      select: 'slug, updated_at',
+      orderBy: [{ column: 'slug', ascending: true }],
+    });
+
+    const features = await fetchAllPublishedForSitemap({
+      table: 'feature_pages',
+      select: 'slug, updated_at',
+      orderBy: [{ column: 'slug', ascending: true }],
+    });
+
+    const combos = await fetchAllPublishedForSitemap({
+      table: 'combo_pages',
+      select: 'industry_slug, location_slug, updated_at',
+      orderBy: [
+        { column: 'industry_slug', ascending: true },
+        { column: 'location_slug', ascending: true },
+      ],
+    });
 
     res.json({
-      blogPosts: blogResult.data || [],
-      useCases: useCaseResult.data || [],
-      locations: locationResult.data || [],
-      features: featureResult.data || [],
-      combos: comboResult.data || [],
+      blogPosts,
+      useCases,
+      locations,
+      features,
+      combos,
     });
   } catch (error) {
     console.error('Error fetching sitemap data:', error);

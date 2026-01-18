@@ -26,6 +26,7 @@ const emailRoutes = require('./routes/email');
 const { startScheduledCallsJob } = require('./jobs/scheduledCalls');
 const { startProvisioningRetryJob } = require('./jobs/provisioningRetry');
 const { startNumberPoolMaintenanceJob } = require('./jobs/numberPoolMaintenance');
+const { startSeoContentGenerationJob } = require('./jobs/seoContentGeneration');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -113,4 +114,5 @@ app.listen(PORT, () => {
   startScheduledCallsJob();
   startProvisioningRetryJob();
   startNumberPoolMaintenanceJob();
+  startSeoContentGenerationJob();
 });
