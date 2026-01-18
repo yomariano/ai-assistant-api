@@ -21,23 +21,11 @@ const mockVoiceProvider = {
 
 // Mock dependencies - use factory function to reference mocks
 jest.mock('../supabase', () => ({
-  supabaseAdmin: {
-    from: jest.fn().mockReturnThis(),
-    select: jest.fn().mockReturnThis(),
-    insert: jest.fn().mockReturnThis(),
-    update: jest.fn().mockReturnThis(),
-    eq: jest.fn().mockReturnThis(),
-    lt: jest.fn().mockReturnThis(),
-    order: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockReturnThis(),
-    single: jest.fn(),
-  },
+  supabaseAdmin: mockSupabase,
 }));
 
 jest.mock('../../adapters/voice', () => ({
-  getVoiceProvider: jest.fn(() => ({
-    importPhoneNumber: jest.fn().mockResolvedValue({ id: 'vapi-phone-123' }),
-  })),
+  getVoiceProvider: jest.fn(() => mockVoiceProvider),
 }));
 
 // Get the mocked supabase for test configuration
@@ -58,7 +46,9 @@ const {
 
 describe('Number Pool Service', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    // Important: `clearAllMocks` does NOT reset queued `mockResolvedValueOnce` chains.
+    // This suite relies heavily on sequencing `.single()` responses, so we must fully reset.
+    jest.resetAllMocks();
     // Reset all mock chains using supabaseAdmin
     supabaseAdmin.from.mockReturnThis();
     supabaseAdmin.select.mockReturnThis();
@@ -69,6 +59,10 @@ describe('Number Pool Service', () => {
     supabaseAdmin.order.mockReturnThis();
     supabaseAdmin.limit.mockReturnThis();
     supabaseAdmin.single.mockResolvedValue({ data: {}, error: null });
+
+    // Ensure voice provider mock stays consistent after resetAllMocks.
+    getVoiceProvider.mockReturnValue(mockVoiceProvider);
+    mockVoiceProvider.importPhoneNumber.mockResolvedValue({ id: 'vapi-phone-123' });
   });
 
   // ============================================
@@ -199,6 +193,7 @@ describe('Number Pool Service', () => {
     const mockReserved = {
       id: 'pool-123',
       phone_number: '+35312655181',
+      region: 'IE',
       status: 'reserved',
       assigned_to: 'user-123',
       vapi_phone_id: null,
@@ -296,7 +291,7 @@ describe('Number Pool Service', () => {
         expect.objectContaining({
           user_id: 'user-123',
           phone_number: '+35312655181',
-          provider: 'voipcloud',
+          status: 'active',
         })
       );
     });
@@ -457,7 +452,8 @@ describe('Number Pool Service', () => {
         { id: 'pool-2', assigned_to: 'user-2' },
       ];
 
-      supabaseAdmin.select.mockResolvedValueOnce({ data: expiredRecords, error: null });
+      // `cleanupExpiredReservations` awaits the result of the final `.lt(...)` call.
+      supabaseAdmin.lt.mockResolvedValueOnce({ data: expiredRecords, error: null });
       supabaseAdmin.update.mockReturnThis();
 
       const count = await cleanupExpiredReservations();
@@ -466,7 +462,7 @@ describe('Number Pool Service', () => {
     });
 
     it('should return 0 if no expired reservations', async () => {
-      supabaseAdmin.select.mockResolvedValueOnce({ data: [], error: null });
+      supabaseAdmin.lt.mockResolvedValueOnce({ data: [], error: null });
 
       const count = await cleanupExpiredReservations();
 
@@ -474,7 +470,7 @@ describe('Number Pool Service', () => {
     });
 
     it('should return 0 if data is null', async () => {
-      supabaseAdmin.select.mockResolvedValueOnce({ data: null, error: null });
+      supabaseAdmin.lt.mockResolvedValueOnce({ data: null, error: null });
 
       const count = await cleanupExpiredReservations();
 
@@ -562,7 +558,7 @@ describe('Number Pool Service', () => {
     });
 
     it('should filter by region if provided', async () => {
-      supabaseAdmin.select.mockResolvedValueOnce({ data: [], error: null });
+      supabaseAdmin.eq.mockResolvedValueOnce({ data: [], error: null });
 
       await getPoolStats('IE');
 

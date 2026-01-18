@@ -195,17 +195,22 @@ async function handleStatusUpdate(message) {
   console.log(`[Vapi Webhook] Status update: ${call.id} -> ${call.status}`);
 
   // Update call history with current status
-  const { error } = await supabase
-    .from('call_history')
-    .update({
-      status: mapVapiStatus(call.status),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('vapi_call_id', call.id);
-
-  if (error) {
-    console.error('[Vapi Webhook] Failed to update call status:', error);
+  let error = null;
+  try {
+    const result = await supabase
+      .from('call_history')
+      .update({
+        status: mapVapiStatus(call.status),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('vapi_call_id', call.id);
+    error = result.error;
+  } catch (queryError) {
+    console.error('💥 Query exception (handleStatusUpdate):', queryError);
+    error = queryError;
   }
+
+  if (error) console.error('[Vapi Webhook] Failed to update call status:', error);
 }
 
 /**
@@ -221,17 +226,22 @@ async function handleTranscript(message) {
   console.log(`[Vapi Webhook] Transcript update for call: ${call.id}`);
 
   // Update call history with latest transcript
-  const { error } = await supabase
-    .from('call_history')
-    .update({
-      transcript: artifact.transcript,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('vapi_call_id', call.id);
-
-  if (error) {
-    console.error('[Vapi Webhook] Failed to update transcript:', error);
+  let error = null;
+  try {
+    const result = await supabase
+      .from('call_history')
+      .update({
+        transcript: artifact.transcript,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('vapi_call_id', call.id);
+    error = result.error;
+  } catch (queryError) {
+    console.error('💥 Query exception (handleTranscript):', queryError);
+    error = queryError;
   }
+
+  if (error) console.error('[Vapi Webhook] Failed to update transcript:', error);
 }
 
 /**
@@ -260,15 +270,20 @@ async function handleTransferCall(call, functionCall) {
   if (!userId) return;
 
   // Log the escalation
-  const { error } = await supabase.from('call_history').update({
-    escalated: true,
-    escalation_reason: 'Transfer requested',
-    updated_at: new Date().toISOString(),
-  }).eq('vapi_call_id', call.id);
-
-  if (error) {
-    console.error('[Vapi Webhook] Failed to log escalation:', error);
+  let error = null;
+  try {
+    const result = await supabase.from('call_history').update({
+      escalated: true,
+      escalation_reason: 'Transfer requested',
+      updated_at: new Date().toISOString(),
+    }).eq('vapi_call_id', call.id);
+    error = result.error;
+  } catch (queryError) {
+    console.error('💥 Query exception (handleTransferCall log escalation):', queryError);
+    error = queryError;
   }
+
+  if (error) console.error('[Vapi Webhook] Failed to log escalation:', error);
 
   // Send immediate escalation notification
   try {
@@ -299,14 +314,21 @@ async function handleHang(message) {
   console.log(`[Vapi Webhook] Call hung up: ${call.id}`);
 
   // Update call history
-  await supabase
-    .from('call_history')
-    .update({
-      status: 'ended',
-      ended_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('vapi_call_id', call.id);
+  try {
+    const result = await supabase
+      .from('call_history')
+      .update({
+        status: 'ended',
+        ended_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('vapi_call_id', call.id);
+    if (result.error) {
+      console.error('[Vapi Webhook] Failed to update hang status:', result.error);
+    }
+  } catch (queryError) {
+    console.error('💥 Query exception (handleHang):', queryError);
+  }
 }
 
 // ============================================
@@ -319,38 +341,56 @@ async function handleHang(message) {
 async function findUserForCall(call) {
   // Try to find by phoneNumberId in user_phone_numbers
   if (call.phoneNumberId) {
-    const { data: phoneNumber } = await supabase
-      .from('user_phone_numbers')
-      .select('user_id')
-      .eq('vapi_phone_id', call.phoneNumberId)
-      .single();
+    try {
+      const { data: phoneNumber, error } = await supabase
+        .from('user_phone_numbers')
+        .select('user_id')
+        .eq('vapi_phone_id', call.phoneNumberId)
+        .single();
 
-    if (phoneNumber?.user_id) {
-      return phoneNumber.user_id;
+      if (error) {
+        console.error('[Vapi Webhook] Failed to lookup user by phoneNumberId:', error);
+      } else if (phoneNumber?.user_id) {
+        return phoneNumber.user_id;
+      }
+    } catch (queryError) {
+      console.error('💥 Query exception (findUserForCall by phoneNumberId):', queryError);
     }
   }
 
   // Try to find by vapi_call_id in call_history
-  const { data: callHistory } = await supabase
-    .from('call_history')
-    .select('user_id')
-    .eq('vapi_call_id', call.id)
-    .single();
+  try {
+    const { data: callHistory, error } = await supabase
+      .from('call_history')
+      .select('user_id')
+      .eq('vapi_call_id', call.id)
+      .single();
 
-  if (callHistory?.user_id) {
-    return callHistory.user_id;
+    if (error) {
+      console.error('[Vapi Webhook] Failed to lookup user by vapi_call_id:', error);
+    } else if (callHistory?.user_id) {
+      return callHistory.user_id;
+    }
+  } catch (queryError) {
+    console.error('💥 Query exception (findUserForCall by vapi_call_id):', queryError);
   }
 
   // Try to find by assistant ID
   if (call.assistantId) {
-    const { data: assistant } = await supabase
-      .from('user_assistants')
-      .select('user_id')
-      .eq('vapi_assistant_id', call.assistantId)
-      .single();
+    try {
+      const { data: assistant, error } = await supabase
+        .from('user_assistants')
+        .select('user_id')
+        .eq('vapi_assistant_id', call.assistantId)
+        .single();
 
-    if (assistant?.user_id) {
-      return assistant.user_id;
+      if (error) {
+        console.error('[Vapi Webhook] Failed to lookup user by assistantId:', error);
+      } else if (assistant?.user_id) {
+        return assistant.user_id;
+      }
+    } catch (queryError) {
+      console.error('💥 Query exception (findUserForCall by assistantId):', queryError);
     }
   }
 
@@ -361,36 +401,46 @@ async function findUserForCall(call) {
  * Get call history ID from Vapi call ID
  */
 async function getCallHistoryId(vapiCallId) {
-  const { data } = await supabase
-    .from('call_history')
-    .select('id')
-    .eq('vapi_call_id', vapiCallId)
-    .single();
-
-  return data?.id;
+  try {
+    const { data, error } = await supabase
+      .from('call_history')
+      .select('id')
+      .eq('vapi_call_id', vapiCallId)
+      .single();
+    if (error) {
+      console.error('[Vapi Webhook] Failed to get call_history id:', error);
+      return null;
+    }
+    return data?.id || null;
+  } catch (queryError) {
+    console.error('💥 Query exception (getCallHistoryId):', queryError);
+    return null;
+  }
 }
 
 /**
  * Update call history with end-of-call data
  */
 async function updateCallHistory(vapiCallId, callData) {
-  const { error } = await supabase
-    .from('call_history')
-    .update({
-      status: 'completed',
-      duration_seconds: callData.duration,
-      cost: callData.cost,
-      transcript: callData.transcript,
-      summary: callData.summary,
-      recording_url: callData.recordingUrl,
-      ended_reason: callData.endedReason,
-      ended_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('vapi_call_id', vapiCallId);
+  try {
+    const { error } = await supabase
+      .from('call_history')
+      .update({
+        status: 'completed',
+        duration_seconds: callData.duration,
+        cost: callData.cost,
+        transcript: callData.transcript,
+        summary: callData.summary,
+        recording_url: callData.recordingUrl,
+        ended_reason: callData.endedReason,
+        ended_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('vapi_call_id', vapiCallId);
 
-  if (error) {
-    console.error('[Vapi Webhook] Failed to update call history:', error);
+    if (error) console.error('[Vapi Webhook] Failed to update call history:', error);
+  } catch (queryError) {
+    console.error('💥 Query exception (updateCallHistory):', queryError);
   }
 }
 
@@ -398,11 +448,21 @@ async function updateCallHistory(vapiCallId, callData) {
  * Get user's subscription plan info
  */
 async function getUserPlanInfo(userId) {
-  const { data: subscription } = await supabase
-    .from('user_subscriptions')
-    .select('plan_id, status, trial_ends_at')
-    .eq('user_id', userId)
-    .single();
+  let subscription = null;
+  try {
+    const { data, error } = await supabase
+      .from('user_subscriptions')
+      .select('plan_id, status, trial_ends_at')
+      .eq('user_id', userId)
+      .single();
+    if (error) {
+      console.error('[Vapi Webhook] Failed to get subscription:', error);
+    } else {
+      subscription = data;
+    }
+  } catch (queryError) {
+    console.error('💥 Query exception (getUserPlanInfo):', queryError);
+  }
 
   if (!subscription) {
     // Default to starter plan if no subscription found
@@ -422,13 +482,23 @@ async function getUserPlanInfo(userId) {
  * Get business name for a user
  */
 async function getBusinessName(userId) {
-  const { data: assistant } = await supabase
-    .from('user_assistants')
-    .select('business_name')
-    .eq('user_id', userId)
-    .single();
+  try {
+    const { data: assistant, error } = await supabase
+      .from('user_assistants')
+      .select('business_name')
+      .eq('user_id', userId)
+      .single();
 
-  return assistant?.business_name || 'Your Business';
+    if (error) {
+      console.error('[Vapi Webhook] Failed to get business name:', error);
+      return 'Your Business';
+    }
+
+    return assistant?.business_name || 'Your Business';
+  } catch (queryError) {
+    console.error('💥 Query exception (getBusinessName):', queryError);
+    return 'Your Business';
+  }
 }
 
 /**

@@ -341,6 +341,14 @@ class VapiProvider {
       transfer_number,
       transfer_method = 'blind_transfer',
       trigger_keywords = [],
+      business_hours_only,
+      business_hours_start,
+      business_hours_end,
+      business_days,
+      timezone,
+      after_hours_action,
+      after_hours_message,
+      max_failed_attempts,
     } = escalationSettings;
 
     // Build the tool description based on triggers
@@ -348,6 +356,25 @@ class VapiProvider {
 
     if (trigger_keywords.length > 0) {
       description += `, or when they mention: ${trigger_keywords.join(', ')}`;
+    }
+
+    if (typeof max_failed_attempts === 'number' && max_failed_attempts > 0) {
+      description += `. If you cannot successfully help after ${max_failed_attempts} attempts, transfer to a human (when allowed).`;
+    }
+
+    if (business_hours_only) {
+      const days = Array.isArray(business_days) && business_days.length > 0 ? business_days.join(',') : '1-5';
+      const start = business_hours_start || '09:00';
+      const end = business_hours_end || '18:00';
+      const tz = timezone || 'local time';
+      description += ` Transfer is ONLY allowed during business hours (${start}-${end}, days=${days}, timezone=${tz}).`;
+
+      if (after_hours_action) {
+        description += ` After hours: ${after_hours_action}.`;
+      }
+      if (after_hours_action === 'voicemail' && after_hours_message) {
+        description += ` Use this after-hours message: "${after_hours_message}".`;
+      }
     }
 
     const tool = {

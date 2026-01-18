@@ -72,16 +72,6 @@ async function createAssistantForUser(userId, options = {}) {
   const voiceProvider = getVoiceProvider();
   console.log(`[Assistant] Using ${voiceProvider.getName()} voice provider`);
 
-  // Build system prompt
-  const systemPrompt = buildSystemPrompt({
-    businessName,
-    businessDescription,
-    greetingName
-  });
-
-  // Build first message
-  const firstMessage = `Hi! This is ${greetingName}${businessName ? ` from ${businessName}` : ''}. How can I help you today?`;
-
   // Get escalation settings if configured
   let escalationSettings = null;
   try {
@@ -89,6 +79,17 @@ async function createAssistantForUser(userId, options = {}) {
   } catch (err) {
     // No escalation settings yet, that's fine
   }
+
+  // Build system prompt
+  const systemPrompt = buildSystemPrompt({
+    businessName,
+    businessDescription,
+    greetingName,
+    escalationSettings
+  });
+
+  // Build first message
+  const firstMessage = `Hi! This is ${greetingName}${businessName ? ` from ${businessName}` : ''}. How can I help you today?`;
 
   // Create assistant in Voice AI provider
   const assistantConfig = {
@@ -146,7 +147,43 @@ async function createAssistantForUser(userId, options = {}) {
 /**
  * Build system prompt for the assistant
  */
-function buildSystemPrompt({ businessName, businessDescription, greetingName }) {
+function buildSystemPrompt({ businessName, businessDescription, greetingName, escalationSettings }) {
+  const escalationBlock = (() => {
+    if (!escalationSettings) return '';
+
+    const isTransferEnabled = Boolean(escalationSettings.transfer_enabled);
+    const hasTransferNumber = Boolean(escalationSettings.transfer_number);
+
+    if (!isTransferEnabled || !hasTransferNumber) {
+      return `
+
+Escalation policy:
+- Call transfers are currently disabled. If someone asks to speak with a person, politely offer to take a message.`;
+    }
+
+    const tz = escalationSettings.timezone || 'the business timezone';
+    const start = escalationSettings.business_hours_start || '09:00';
+    const end = escalationSettings.business_hours_end || '18:00';
+    const days = Array.isArray(escalationSettings.business_days) ? escalationSettings.business_days.join(',') : '1-5';
+    const afterHoursAction = escalationSettings.after_hours_action || 'voicemail';
+    const afterHoursMessage = escalationSettings.after_hours_message;
+    const maxFailedAttempts = typeof escalationSettings.max_failed_attempts === 'number'
+      ? escalationSettings.max_failed_attempts
+      : null;
+
+    return `
+
+Escalation policy:
+- If the caller asks for a human, you may use the "transferCall" tool to transfer the call.
+- If you are repeatedly failing to help (confusion, missing info, repeated corrections), escalate to a human.
+${maxFailedAttempts ? `- If you cannot help after ${maxFailedAttempts} attempts, escalate (when allowed).` : ''}
+- Transfer is only allowed during business hours (${start}-${end}, days=${days}, timezone=${tz}).
+- After hours, do NOT transfer. Instead follow this after-hours behavior: ${afterHoursAction}.
+${afterHoursAction === 'voicemail' && afterHoursMessage ? `- Use this exact after-hours message when appropriate: "${afterHoursMessage}"` : ''}
+${afterHoursAction === 'sms_alert' ? `- Tell the caller you will notify the owner/team and continue to assist while they wait.` : ''}
+${afterHoursAction === 'callback_promise' ? `- Collect name, phone number, and reason for calling, then promise a callback.` : ''}`;
+  })();
+
   return `You are ${greetingName}, a helpful and friendly AI assistant${businessName ? ` for ${businessName}` : ''}.
 
 ${businessDescription ? `About the business: ${businessDescription}` : ''}
@@ -163,7 +200,7 @@ Guidelines:
 - If you don't know something, say so honestly
 - Always confirm important details back to the caller
 
-Remember: You're having a phone conversation, so speak naturally and avoid long monologues.`;
+Remember: You're having a phone conversation, so speak naturally and avoid long monologues.${escalationBlock}`;
 }
 
 /**

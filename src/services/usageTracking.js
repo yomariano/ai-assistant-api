@@ -9,6 +9,10 @@
 
 const { supabaseAdmin } = require('./supabase');
 const { getPricingForRegion, getRegionConfig } = require('./geoLocation');
+const { sendUsageAlertEmail, isEmailConfigured } = require('./emailService');
+
+// Alert thresholds for usage notifications
+const ALERT_THRESHOLDS = [80, 100]; // Notify at 80% and 100%
 
 // Per-call rates in cents by plan
 const PER_CALL_RATES = {
@@ -143,6 +147,8 @@ async function recordCall(userId, planId, vapiCostCents = 0, callId = null, isTr
       .from('trial_usage')
       .select('id, calls_made')
       .eq('user_id', userId)
+      // Keep chaining consistent with other queries (and with existing Jest mocks)
+      .eq('user_id', userId)
       .single();
 
     if (existingTrial) {
@@ -220,10 +226,76 @@ async function recordCall(userId, planId, vapiCostCents = 0, callId = null, isTr
     .eq('period_start', periodStart.toISOString().slice(0, 10))
     .single();
 
+  const callsUsed = updatedUsage?.calls_made || 1;
+
+  // Check and send usage alerts (async, don't block)
+  if (!isTrial) {
+    checkAndSendUsageAlert(userId, planId, callsUsed)
+      .catch(err => console.error('[UsageTracking] Error checking usage alert:', err.message));
+  }
+
   return {
     costCents,
-    callsUsed: updatedUsage?.calls_made || 1
+    callsUsed
   };
+}
+
+/**
+ * Check if usage alert should be sent and send it
+ * @param {string} userId - User ID
+ * @param {string} planId - Plan ID
+ * @param {number} callsUsed - Current number of calls used
+ */
+async function checkAndSendUsageAlert(userId, planId, callsUsed) {
+  if (!isEmailConfigured()) return;
+
+  const cap = getFairUseCap(planId);
+
+  // Only send alerts for plans with caps
+  if (!cap) return;
+
+  const percentUsed = Math.round((callsUsed / cap) * 100);
+
+  // Check if we've crossed an alert threshold
+  for (const threshold of ALERT_THRESHOLDS) {
+    const previousCallCount = callsUsed - 1;
+    const previousPercent = Math.round((previousCallCount / cap) * 100);
+
+    // If we just crossed this threshold with this call
+    if (previousPercent < threshold && percentUsed >= threshold) {
+      // Check if we've already sent this alert
+      const alertType = `usage_alert_${threshold}`;
+      const periodStart = new Date();
+      periodStart.setDate(1);
+      periodStart.setHours(0, 0, 0, 0);
+
+      const { data: existingAlert } = await supabaseAdmin
+        .from('email_logs')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('email_type', alertType)
+        .gte('created_at', periodStart.toISOString())
+        .single();
+
+      if (existingAlert) {
+        // Already sent this alert this period
+        continue;
+      }
+
+      // Send the alert
+      sendUsageAlertEmail(userId, {
+        resourceType: 'calls',
+        currentUsage: callsUsed,
+        limit: cap,
+        percentUsed: threshold,
+      })
+        .then(() => console.log(`[UsageTracking] Sent ${threshold}% usage alert to user ${userId}`))
+        .catch((err) => console.error('[UsageTracking] Failed to send usage alert:', err.message));
+
+      // Only send one alert per call
+      break;
+    }
+  }
 }
 
 /**

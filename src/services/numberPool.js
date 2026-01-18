@@ -25,7 +25,7 @@ async function getAvailableNumber(region = 'IE') {
 
   if (error && error.code !== 'PGRST116') {
     console.error('[NumberPool] Error getting available number:', error);
-    throw error;
+    throw new Error(error.message || 'Database error');
   }
 
   return data;
@@ -357,16 +357,11 @@ async function recycleReleasedNumbers(cooldownHours = 24) {
  * @returns {Object} Pool statistics
  */
 async function getPoolStats(region = null) {
-  let query = supabaseAdmin.from('phone_number_pool').select('status, region');
-
-  if (region) {
-    query = query.eq('region', region);
-  }
-
-  const { data, error } = await query;
+  const base = supabaseAdmin.from('phone_number_pool').select('status, region');
+  const { data, error } = region ? await base.eq('region', region) : await base;
 
   if (error) {
-    throw error;
+    throw new Error(error.message || 'Database error');
   }
 
   const stats = {
@@ -426,7 +421,7 @@ async function addNumberToPool(numberData) {
     .single();
 
   if (error) {
-    throw error;
+    throw new Error(error.message || 'Database error');
   }
 
   console.log(`[NumberPool] Added ${phoneNumber} to pool`);

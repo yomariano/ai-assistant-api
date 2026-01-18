@@ -1,4 +1,5 @@
 const { supabaseAdmin } = require('../services/supabase');
+const { sendWelcomeEmail, isEmailConfigured } = require('../services/emailService');
 
 // Map plan to dev user UUID (must match seedDevUsers.js)
 const DEV_USER_IDS = {
@@ -172,6 +173,13 @@ const authenticate = async (req, res, next) => {
         return res.status(500).json({ error: { message: 'Failed to create user profile' } });
       }
       user = newUser;
+
+      // Send welcome email for first-time signup (async, don't block request)
+      if (isEmailConfigured()) {
+        sendWelcomeEmail(user.id, { planId: 'starter' })
+          .then(() => console.log(`[Auth] Welcome email sent to ${user.email}`))
+          .catch((err) => console.error('[Auth] Failed to send welcome email:', err.message));
+      }
     }
 
     // Attach user to request

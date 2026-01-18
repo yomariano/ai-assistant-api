@@ -6,6 +6,7 @@
  */
 
 const { createClient } = require('@supabase/supabase-js');
+const { isWithinBusinessHours } = require('./business-hours');
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -101,8 +102,19 @@ async function sendSMS({ to, body }) {
  * Get notification preferences for a user
  */
 async function getNotificationPreferences(userId) {
-  const { data, error } = await supabase
-    .rpc('get_or_create_notification_preferences', { p_user_id: userId });
+  let data = null;
+  let error = null;
+
+  try {
+    const result = await supabase
+      .rpc('get_or_create_notification_preferences', { p_user_id: userId });
+    data = result.data;
+    error = result.error;
+  } catch (queryError) {
+    console.error('💥 Query exception (getNotificationPreferences):', queryError);
+    error = queryError;
+    data = null;
+  }
 
   if (error) {
     console.error('Error getting notification preferences:', error);
@@ -127,15 +139,27 @@ async function getNotificationPreferences(userId) {
  * Update notification preferences for a user
  */
 async function updateNotificationPreferences(userId, preferences) {
-  const { data, error } = await supabase
-    .from('notification_preferences')
-    .upsert({
-      user_id: userId,
-      ...preferences,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' })
-    .select()
-    .single();
+  let data = null;
+  let error = null;
+
+  try {
+    const result = await supabase
+      .from('notification_preferences')
+      .upsert({
+        user_id: userId,
+        ...preferences,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
+      .select()
+      .single();
+
+    data = result.data;
+    error = result.error;
+  } catch (queryError) {
+    console.error('💥 Query exception (updateNotificationPreferences):', queryError);
+    error = queryError;
+    data = null;
+  }
 
   if (error) {
     console.error('Error updating notification preferences:', error);
@@ -153,20 +177,32 @@ async function updateNotificationPreferences(userId, preferences) {
  * Get escalation settings for a user
  */
 async function getEscalationSettings(userId) {
-  const { data, error } = await supabase
-    .rpc('get_or_create_escalation_settings', { p_user_id: userId });
+  let data = null;
+  let error = null;
+
+  try {
+    const result = await supabase
+      .rpc('get_or_create_escalation_settings', { p_user_id: userId });
+    data = result.data;
+    error = result.error;
+  } catch (queryError) {
+    console.error('💥 Query exception (getEscalationSettings):', queryError);
+    error = queryError;
+    data = null;
+  }
 
   if (error) {
     console.error('Error getting escalation settings:', error);
-    // Return defaults if function doesn't exist yet
+    // Return MVP defaults if function doesn't exist yet
     return {
       user_id: userId,
       transfer_enabled: false,
       transfer_number: null,
-      transfer_method: 'warm_transfer',
-      trigger_keywords: ['speak to someone', 'real person', 'manager', 'human', 'complaint'],
-      max_failed_attempts: 2,
-      business_hours_only: true,
+      // MVP defaults: simple blind transfer, no business hours restrictions
+      transfer_method: 'blind_transfer',
+      trigger_keywords: ['speak to someone', 'real person', 'human'],
+      max_failed_attempts: 3,
+      business_hours_only: false,
       after_hours_action: 'voicemail',
     };
   }
@@ -178,15 +214,27 @@ async function getEscalationSettings(userId) {
  * Update escalation settings for a user
  */
 async function updateEscalationSettings(userId, settings) {
-  const { data, error } = await supabase
-    .from('escalation_settings')
-    .upsert({
-      user_id: userId,
-      ...settings,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' })
-    .select()
-    .single();
+  let data = null;
+  let error = null;
+
+  try {
+    const result = await supabase
+      .from('escalation_settings')
+      .upsert({
+        user_id: userId,
+        ...settings,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
+      .select()
+      .single();
+
+    data = result.data;
+    error = result.error;
+  } catch (queryError) {
+    console.error('💥 Query exception (updateEscalationSettings):', queryError);
+    error = queryError;
+    data = null;
+  }
 
   if (error) {
     console.error('Error updating escalation settings:', error);
@@ -214,22 +262,33 @@ async function logNotification({
   status,
   errorMessage,
 }) {
-  const { data, error } = await supabase
-    .from('call_notifications')
-    .insert({
-      user_id: userId,
-      call_id: callId,
-      notification_type: notificationType,
-      event_type: eventType,
-      recipient,
-      subject,
-      content,
-      status,
-      error_message: errorMessage,
-      sent_at: status === 'sent' ? new Date().toISOString() : null,
-    })
-    .select()
-    .single();
+  let data = null;
+  let error = null;
+
+  try {
+    const result = await supabase
+      .from('call_notifications')
+      .insert({
+        user_id: userId,
+        call_id: callId,
+        notification_type: notificationType,
+        event_type: eventType,
+        recipient,
+        subject,
+        content,
+        status,
+        error_message: errorMessage,
+        sent_at: status === 'sent' ? new Date().toISOString() : null,
+      })
+      .select()
+      .single();
+    data = result.data;
+    error = result.error;
+  } catch (queryError) {
+    console.error('💥 Query exception (logNotification):', queryError);
+    error = queryError;
+    data = null;
+  }
 
   if (error) {
     console.error('Error logging notification:', error);
@@ -251,12 +310,23 @@ async function updateNotificationStatus(notificationId, status, errorMessage = n
     updates.delivered_at = new Date().toISOString();
   }
 
-  const { data, error } = await supabase
-    .from('call_notifications')
-    .update(updates)
-    .eq('id', notificationId)
-    .select()
-    .single();
+  let data = null;
+  let error = null;
+
+  try {
+    const result = await supabase
+      .from('call_notifications')
+      .update(updates)
+      .eq('id', notificationId)
+      .select()
+      .single();
+    data = result.data;
+    error = result.error;
+  } catch (queryError) {
+    console.error('💥 Query exception (updateNotificationStatus):', queryError);
+    error = queryError;
+    data = null;
+  }
 
   if (error) {
     console.error('Error updating notification status:', error);
@@ -281,6 +351,14 @@ async function notifyCallEvent({
   // Get user's notification preferences
   const prefs = await getNotificationPreferences(userId);
 
+  // Best-effort: get escalation schedule for business-hours gating where needed
+  let escalationSettings = null;
+  try {
+    escalationSettings = await getEscalationSettings(userId);
+  } catch (err) {
+    // ignore
+  }
+
   // Check if this event type should trigger a notification
   const shouldNotify = {
     call_complete: prefs.notify_on_call_complete,
@@ -295,11 +373,21 @@ async function notifyCallEvent({
   }
 
   // Get user email for notifications
-  const { data: user } = await supabase
-    .from('users')
-    .select('email, full_name')
-    .eq('id', userId)
-    .single();
+  let user = null;
+  try {
+    const result = await supabase
+      .from('users')
+      .select('email, full_name')
+      .eq('id', userId)
+      .single();
+    if (result.error) {
+      console.error('Error getting user for notifications:', result.error);
+    } else {
+      user = result.data;
+    }
+  } catch (queryError) {
+    console.error('💥 Query exception (notifyCallEvent get user):', queryError);
+  }
 
   const results = { email: null, sms: null };
 
@@ -330,6 +418,30 @@ async function notifyCallEvent({
 
   // Send SMS notification
   if (prefs.sms_enabled && prefs.sms_number) {
+    // Enforce business-hours-only (best-effort)
+    if (prefs.business_hours_only) {
+      const schedule = {
+        timezone: prefs.timezone || escalationSettings?.timezone || 'UTC',
+        businessDays: escalationSettings?.business_days || [1, 2, 3, 4, 5],
+        startTime: escalationSettings?.business_hours_start || '09:00',
+        endTime: escalationSettings?.business_hours_end || '18:00',
+      };
+
+      const within = isWithinBusinessHours(schedule);
+
+      // Special case: if the event is an escalation and user chose after-hours SMS alerts,
+      // allow SMS outside hours (this is the "after_hours_action=sms_alert" behavior).
+      const allowAfterHoursEscalationSms =
+        eventType === 'escalation' &&
+        escalationSettings?.business_hours_only === true &&
+        escalationSettings?.after_hours_action === 'sms_alert';
+
+      if (!within.isWithin && !allowAfterHoursEscalationSms) {
+        results.sms = { success: false, skipped: true, reason: `SMS blocked by business_hours_only (${within.reason || 'outside'})` };
+        return results;
+      }
+    }
+
     const smsContent = formatSMSContent(eventType, callData);
     const smsResult = await sendSMS({
       to: prefs.sms_number,
@@ -453,11 +565,21 @@ function formatSMSContent(eventType, callData) {
  */
 async function sendTestNotification(userId, type = 'email') {
   const prefs = await getNotificationPreferences(userId);
-  const { data: user } = await supabase
-    .from('users')
-    .select('email')
-    .eq('id', userId)
-    .single();
+  let user = null;
+  try {
+    const result = await supabase
+      .from('users')
+      .select('email')
+      .eq('id', userId)
+      .single();
+    if (result.error) {
+      console.error('Error getting user for test notification:', result.error);
+    } else {
+      user = result.data;
+    }
+  } catch (queryError) {
+    console.error('💥 Query exception (sendTestNotification get user):', queryError);
+  }
 
   const testData = {
     customerNumber: '+353 1 234 5678',

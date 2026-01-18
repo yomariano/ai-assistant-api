@@ -18,9 +18,11 @@ function getResendClient() {
   return resendClient;
 }
 
+// Avoid crashing in tests/dev when env vars aren't set.
+// (Using empty-string fallbacks matches `src/services/supabase.js` behavior.)
 const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
+  process.env.SUPABASE_URL || '',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 );
 
 // ============================================
@@ -240,6 +242,58 @@ function paymentFailedTemplate(data) {
 }
 
 /**
+ * Usage alert email (approaching limits)
+ */
+function usageAlertEmailTemplate(data) {
+  const { userName, resourceType, currentUsage, limit, percentUsed } = data;
+  const firstName = userName ? userName.split(' ')[0] : 'there';
+
+  // Determine urgency styling
+  const isUrgent = percentUsed >= 100;
+  const alertColor = isUrgent ? '#dc2626' : '#f59e0b';
+  const alertBg = isUrgent ? '#fef2f2' : '#fffbeb';
+  const alertBorder = isUrgent ? '#fecaca' : '#fde68a';
+
+  const content = `
+    <h2>Usage Alert ${isUrgent ? '🚨' : '⚠️'}</h2>
+    <p>Hi ${firstName},</p>
+    <p>You've used <strong>${percentUsed}%</strong> of your ${resourceType} this month.</p>
+
+    <div style="background-color: ${alertBg}; border: 1px solid ${alertBorder}; border-left: 4px solid ${alertColor}; border-radius: 8px; padding: 16px; margin: 20px 0;">
+      <p style="margin: 0; color: ${isUrgent ? '#991b1b' : '#92400e'}; font-weight: 600;">
+        ${currentUsage} / ${limit} ${resourceType} used
+      </p>
+    </div>
+
+    ${isUrgent ? `
+    <p style="color: #dc2626; font-weight: 600;">
+      You've reached your limit! Additional usage may be restricted or charged at overage rates.
+    </p>
+    ` : `
+    <p>Consider upgrading your plan for higher limits and uninterrupted service.</p>
+    `}
+
+    <p style="text-align: center;">
+      <a href="${EMAIL_CONFIG.baseUrl}/billing" class="button">
+        ${isUrgent ? 'Upgrade Now' : 'View Plans'}
+      </a>
+    </p>
+
+    <p>If you have questions about your usage, contact us at <a href="mailto:${EMAIL_CONFIG.replyTo}">${EMAIL_CONFIG.replyTo}</a>.</p>
+
+    <p>– The OrderBot Team</p>
+  `;
+
+  return {
+    subject: isUrgent
+      ? `🚨 Usage Limit Reached - ${resourceType}`
+      : `⚠️ Usage Alert: ${percentUsed}% of ${resourceType} used`,
+    html: baseTemplate(content, `You've used ${percentUsed}% of your ${resourceType} this month.`),
+    text: `Usage Alert\n\nHi ${firstName},\n\nYou've used ${percentUsed}% of your ${resourceType} this month (${currentUsage}/${limit}).\n\n${isUrgent ? 'You\'ve reached your limit!' : 'Consider upgrading your plan.'}\n\nUpgrade: ${EMAIL_CONFIG.baseUrl}/billing\n\n– The OrderBot Team`,
+  };
+}
+
+/**
  * Subscription cancelled email
  */
 function subscriptionCancelledTemplate(data) {
@@ -454,6 +508,42 @@ async function sendPaymentFailedEmail(userId, paymentData) {
 }
 
 /**
+ * Send usage alert email
+ */
+async function sendUsageAlertEmail(userId, usageData) {
+  const { data: user } = await supabase
+    .from('users')
+    .select('email, full_name')
+    .eq('id', userId)
+    .single();
+
+  if (!user?.email) {
+    return { success: false, error: 'No email found' };
+  }
+
+  const template = usageAlertEmailTemplate({
+    userName: user.full_name,
+    resourceType: usageData.resourceType,
+    currentUsage: usageData.currentUsage,
+    limit: usageData.limit,
+    percentUsed: usageData.percentUsed,
+  });
+
+  const result = await sendTransactionalEmail(user.email, template);
+
+  await logEmail({
+    userId,
+    emailType: `usage_alert_${usageData.percentUsed}`,
+    recipient: user.email,
+    subject: template.subject,
+    status: result.success ? 'sent' : 'failed',
+    error: result.error,
+  });
+
+  return result;
+}
+
+/**
  * Send subscription cancelled email
  */
 async function sendSubscriptionCancelledEmail(userId, subscriptionData) {
@@ -488,6 +578,28 @@ async function sendSubscriptionCancelledEmail(userId, subscriptionData) {
 }
 
 // ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
+/**
+ * Check if email service is configured
+ */
+function isEmailConfigured() {
+  return !!process.env.RESEND_API_KEY;
+}
+
+/**
+ * Get email configuration (for status endpoints)
+ */
+function getEmailConfig() {
+  return {
+    configured: isEmailConfigured(),
+    from: EMAIL_CONFIG.from,
+    replyTo: EMAIL_CONFIG.replyTo,
+  };
+}
+
+// ============================================
 // EXPORTS
 // ============================================
 
@@ -497,6 +609,11 @@ module.exports = {
   sendSubscriptionConfirmation,
   sendPaymentFailedEmail,
   sendSubscriptionCancelledEmail,
+  sendUsageAlertEmail,
+
+  // Utility functions
+  isEmailConfigured,
+  getEmailConfig,
 
   // Low-level (for testing)
   sendTransactionalEmail,
@@ -506,4 +623,5 @@ module.exports = {
   subscriptionConfirmationTemplate,
   paymentFailedTemplate,
   subscriptionCancelledTemplate,
+  usageAlertEmailTemplate,
 };
