@@ -7,7 +7,8 @@ const {
   getAvailableVoices,
   createAssistantForUser,
   recreateVapiAssistant,
-  syncAssistantToPhoneNumbers
+  syncAssistantToPhoneNumbers,
+  isValidVapiId
 } = require('../services/assistant');
 const { getSubscription, getPlanLimits } = require('../services/stripe');
 
@@ -204,7 +205,7 @@ router.post('/regenerate-prompt', authenticate, async (req, res, next) => {
  */
 router.get('/test-config', authenticate, async (req, res, next) => {
   try {
-    const assistant = await getUserAssistant(req.userId);
+    let assistant = await getUserAssistant(req.userId);
 
     if (!assistant) {
       return res.status(404).json({
@@ -216,6 +217,24 @@ router.get('/test-config', authenticate, async (req, res, next) => {
       return res.status(400).json({
         error: { message: 'Assistant not properly configured. Please contact support.' }
       });
+    }
+
+    // Check if the stored ID is valid (not a mock ID)
+    // If invalid, auto-recreate with a real Vapi ID
+    if (!isValidVapiId(assistant.vapi_assistant_id)) {
+      console.log(`[TestConfig] Invalid/mock vapi_assistant_id detected: ${assistant.vapi_assistant_id}`);
+      console.log('[TestConfig] Auto-recreating assistant with real Vapi provider...');
+
+      try {
+        const recreated = await recreateVapiAssistant(req.userId);
+        assistant = { ...assistant, vapi_assistant_id: recreated.vapiAssistant.id };
+        console.log(`[TestConfig] Successfully recreated with real Vapi ID: ${assistant.vapi_assistant_id}`);
+      } catch (recreateError) {
+        console.error('[TestConfig] Failed to auto-recreate assistant:', recreateError.message);
+        return res.status(500).json({
+          error: { message: 'Assistant has an invalid configuration and could not be fixed. Please try saving your assistant settings again.' }
+        });
+      }
     }
 
     res.json({
