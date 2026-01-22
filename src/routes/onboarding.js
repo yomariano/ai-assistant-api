@@ -103,6 +103,16 @@ router.post('/quick-setup', authenticate, async (req, res) => {
       })
       .eq('user_id', userId);
 
+    // Explicitly sync assistant to all user's phone numbers
+    // This ensures the phone numbers in VAPI point to the correct assistant
+    try {
+      const syncResult = await assistantService.syncAssistantToPhoneNumbers(userId);
+      console.log(`[Onboarding] Phone sync: ${syncResult.synced} numbers linked to assistant`);
+    } catch (syncError) {
+      console.error('[Onboarding] Phone sync failed:', syncError.message);
+      // Continue anyway - user can still use the dashboard
+    }
+
     // Mark onboarding as complete
     await supabaseAdmin
       .from('users')
