@@ -22,6 +22,8 @@ const integrationsRoutes = require('./routes/integrations');
 const providersRoutes = require('./routes/providers');
 const emailRoutes = require('./routes/email');
 const publicLiveDemoRoutes = require('./routes/publicLiveDemo');
+const templatesRoutes = require('./routes/templates');
+const onboardingRoutes = require('./routes/onboarding');
 
 // Import scheduled jobs
 const { startScheduledCallsJob } = require('./jobs/scheduledCalls');
@@ -40,7 +42,11 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
   'http://localhost:3001',
   'https://voicefleet.ai',
-  'https://www.voicefleet.ai'
+  'https://www.voicefleet.ai',
+  'https://app.voicefleet.ai',
+  // Dev tunnel URLs
+  'https://dev-app.voicefleet.ai',
+  'https://dev.voicefleet.ai'
 ].filter(Boolean);
 
 app.use(cors({
@@ -91,6 +97,8 @@ app.use('/api/integrations', integrationsRoutes);
 app.use('/api/providers', providersRoutes);
 app.use('/api/email', emailRoutes);
 app.use('/api/public/live-demo', publicLiveDemoRoutes);
+app.use('/api/templates', templatesRoutes);
+app.use('/api/onboarding', onboardingRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
