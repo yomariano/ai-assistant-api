@@ -275,11 +275,18 @@ describe('VapiProvider', () => {
         systemPrompt: 'New system prompt',
       });
 
+      // The VAPI provider prepends a date context to all system prompts
+      // So we check that the prompt CONTAINS the new content
       expect(mockAxiosClient.patch).toHaveBeenCalledWith(
         '/assistant/assistant-123',
         expect.objectContaining({
           model: expect.objectContaining({
-            messages: [{ role: 'system', content: 'New system prompt' }],
+            messages: [
+              expect.objectContaining({
+                role: 'system',
+                content: expect.stringContaining('New system prompt'),
+              }),
+            ],
           }),
         })
       );

@@ -17,6 +17,7 @@ const mockSupabase = {
 
 const mockVoiceProvider = {
   importPhoneNumber: jest.fn().mockResolvedValue({ id: 'vapi-phone-123' }),
+  findPhoneNumber: jest.fn().mockResolvedValue(null), // Returns null to trigger import
 };
 
 // Mock dependencies - use factory function to reference mocks
@@ -63,6 +64,7 @@ describe('Number Pool Service', () => {
     // Ensure voice provider mock stays consistent after resetAllMocks.
     getVoiceProvider.mockReturnValue(mockVoiceProvider);
     mockVoiceProvider.importPhoneNumber.mockResolvedValue({ id: 'vapi-phone-123' });
+    mockVoiceProvider.findPhoneNumber.mockResolvedValue(null); // Returns null to trigger import
   });
 
   // ============================================

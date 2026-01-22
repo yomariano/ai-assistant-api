@@ -369,8 +369,8 @@ async function handleEndOfCallReport(message) {
   // Get user's subscription plan for billing
   const { planId, isTrial } = await getUserPlanInfo(userId);
 
-  // Update call history record
-  await updateCallHistory(call.id, callData);
+  // Update call history record (pass userId for inbound call inserts)
+  await updateCallHistory(call.id, callData, userId);
 
   // Get call history ID for usage tracking
   const callHistoryId = await getCallHistoryId(call.id);
@@ -440,7 +440,49 @@ async function handleStatusUpdate(message) {
 
   console.log(`[Vapi Webhook] Status update: ${call.id} -> ${call.status}`);
 
-  // Update call history with current status
+  // Check if call record exists
+  let existingCall = null;
+  try {
+    const { data } = await supabase
+      .from('call_history')
+      .select('id')
+      .eq('vapi_call_id', call.id)
+      .single();
+    existingCall = data;
+  } catch (e) {
+    // Record doesn't exist, will create below
+  }
+
+  // If no record exists (inbound call), create one
+  if (!existingCall) {
+    const userId = await findUserForCall(call);
+    if (userId) {
+      console.log(`[Vapi Webhook] Creating call_history record for inbound call: ${call.id}`);
+      try {
+        const { error: insertError } = await supabase
+          .from('call_history')
+          .insert({
+            user_id: userId,
+            phone_number: call.customer?.number || 'Unknown',
+            message: 'Inbound call',
+            language: 'en',
+            vapi_call_id: call.id,
+            status: mapVapiStatus(call.status),
+            created_at: new Date().toISOString(),
+          });
+        if (insertError) {
+          console.error('[Vapi Webhook] Failed to insert inbound call:', insertError);
+        }
+      } catch (queryError) {
+        console.error('💥 Query exception (handleStatusUpdate insert):', queryError);
+      }
+    } else {
+      console.warn(`[Vapi Webhook] Cannot create call record - no user found for call: ${call.id}`);
+    }
+    return;
+  }
+
+  // Update existing call history record
   let error = null;
   try {
     const result = await supabase
@@ -666,9 +708,44 @@ async function getCallHistoryId(vapiCallId) {
 
 /**
  * Update call history with end-of-call data
+ * Also handles inserting if record doesn't exist (inbound calls)
  */
-async function updateCallHistory(vapiCallId, callData) {
+async function updateCallHistory(vapiCallId, callData, userId = null) {
   try {
+    // Check if record exists first
+    const { data: existingCall } = await supabase
+      .from('call_history')
+      .select('id')
+      .eq('vapi_call_id', vapiCallId)
+      .single();
+
+    if (!existingCall && userId) {
+      // Insert new record for inbound call
+      console.log(`[Vapi Webhook] Inserting call_history record for inbound call: ${vapiCallId}`);
+      const { error: insertError } = await supabase
+        .from('call_history')
+        .insert({
+          user_id: userId,
+          phone_number: callData.customerNumber || 'Unknown',
+          message: callData.summary || 'Inbound call',
+          language: 'en',
+          vapi_call_id: vapiCallId,
+          status: 'completed',
+          duration_seconds: callData.duration,
+          transcript: callData.transcript,
+          recording_url: callData.recordingUrl,
+          ended_reason: callData.endedReason,
+          ended_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        });
+
+      if (insertError) {
+        console.error('[Vapi Webhook] Failed to insert call history:', insertError);
+      }
+      return;
+    }
+
+    // Update existing record
     const { error } = await supabase
       .from('call_history')
       .update({
