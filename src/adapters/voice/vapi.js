@@ -289,6 +289,29 @@ SPEECH RULES: Always speak dates naturally (e.g., "Thursday, January twenty-seco
   }
 
   /**
+   * Find a phone number in VAPI by its E.164 number
+   * @param {string} phoneNumber - Phone number in E.164 format (e.g., +35312655181)
+   * @returns {Object|null} Phone number object or null if not found
+   */
+  async findPhoneNumber(phoneNumber) {
+    try {
+      const response = await this.client.get('/phone-number');
+      const phones = response.data || [];
+
+      // Find matching phone number
+      const found = phones.find(p => {
+        const num = p.number || p.phoneNumber;
+        return num === phoneNumber;
+      });
+
+      return found || null;
+    } catch (error) {
+      console.error('Vapi find phone error:', error.response?.data || error.message);
+      return null;
+    }
+  }
+
+  /**
    * Assign assistant to phone number
    */
   async assignAssistantToNumber(phoneNumberId, assistantId) {
