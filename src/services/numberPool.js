@@ -114,19 +114,34 @@ async function assignNumber(userId, poolNumberId = null, options = {}) {
     throw new Error('Pool number is reserved for a different user');
   }
 
-  // Import to VAPI if not already
+  // Import to VAPI if not already, or verify existing VAPI ID is valid
   let vapiPhoneId = poolNumber.vapi_phone_id;
+  const voiceProvider = getVoiceProvider();
 
-  if (!vapiPhoneId) {
+  // Check if VAPI ID looks like a placeholder (not a real UUID)
+  const isPlaceholder = vapiPhoneId && (
+    vapiPhoneId.startsWith('phone_') ||
+    !vapiPhoneId.includes('-')
+  );
+
+  if (!vapiPhoneId || isPlaceholder) {
     try {
-      const voiceProvider = getVoiceProvider();
-      const vapiResult = await voiceProvider.importPhoneNumber(poolNumber.phone_number, 'voipcloud', {
-        name: `Ireland-${poolNumber.phone_number.slice(-4)}`,
-        ...(vapiAssistantId ? { assistantId: vapiAssistantId } : {}),
-      });
-      vapiPhoneId = vapiResult.id;
+      // First, try to find if this number already exists in VAPI
+      const existingPhone = await voiceProvider.findPhoneNumber(poolNumber.phone_number);
+      if (existingPhone) {
+        vapiPhoneId = existingPhone.id;
+        console.log(`[NumberPool] Found existing VAPI phone: ${vapiPhoneId}`);
+      } else {
+        // Import the number to VAPI
+        const vapiResult = await voiceProvider.importPhoneNumber(poolNumber.phone_number, 'voipcloud', {
+          name: `Ireland-${poolNumber.phone_number.slice(-4)}`,
+          ...(vapiAssistantId ? { assistantId: vapiAssistantId } : {}),
+        });
+        vapiPhoneId = vapiResult.id;
+        console.log(`[NumberPool] Imported to VAPI: ${vapiPhoneId}`);
+      }
     } catch (err) {
-      console.error('[NumberPool] Failed to import to VAPI:', err);
+      console.error('[NumberPool] Failed to import/find in VAPI:', err.message);
       // Continue anyway - might already be imported
     }
   }
