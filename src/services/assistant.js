@@ -6,6 +6,18 @@ const vapiTools = require('./vapiTools');
 const providerService = require('./providers');
 
 /**
+ * Check if an ID is a valid UUID (real Vapi ID)
+ * Mock IDs look like: asst_1737578000000_1000, mock_xxx, etc.
+ * Real Vapi IDs are UUIDs: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+ */
+function isValidVapiId(id) {
+  if (!id || typeof id !== 'string') return false;
+  // UUID v4 regex pattern
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(id);
+}
+
+/**
  * Vapi native voices - high quality, low latency
  */
 const VAPI_VOICES = [
@@ -76,7 +88,19 @@ async function createAssistantForUser(userId, options = {}) {
 
   // Get voice provider (automatically selects mock/real based on environment)
   const voiceProvider = getVoiceProvider();
-  console.log(`[Assistant] Using ${voiceProvider.getName()} voice provider`);
+  const providerName = voiceProvider.getName();
+  console.log(`[Assistant] Using ${providerName} voice provider`);
+
+  // CRITICAL: Prevent mock provider from being used in production
+  // This ensures we never store mock IDs in the production database
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isMockProvider = providerName === 'vapi-mock' || providerName === 'mock';
+
+  if (isProduction && isMockProvider) {
+    console.error('[Assistant] CRITICAL: Mock provider detected in production! This should not happen.');
+    console.error('[Assistant] Check environment: VOICE_PROVIDER, DEV_MODE, NODE_ENV, VAPI_API_KEY');
+    throw new Error('Cannot create assistant: Mock provider is not allowed in production. Check server configuration.');
+  }
 
   // Get escalation settings if configured
   let escalationSettings = null;
@@ -128,6 +152,14 @@ async function createAssistantForUser(userId, options = {}) {
 
   try {
     const vapiAssistant = await voiceProvider.createAssistant(assistantConfig);
+
+    // Validate the returned assistant ID is a valid UUID (not a mock ID)
+    // This is a safety check to prevent mock IDs from being stored
+    if (!isValidVapiId(vapiAssistant.id)) {
+      console.error(`[Assistant] Invalid assistant ID returned: ${vapiAssistant.id}`);
+      console.error('[Assistant] This appears to be a mock ID. Check VOICE_PROVIDER and VAPI_API_KEY settings.');
+      throw new Error(`Invalid assistant ID returned from provider: ${vapiAssistant.id}. Check server configuration.`);
+    }
 
     // Determine features based on plan
     const planLimits = getPlanLimits(planId);
@@ -269,6 +301,24 @@ async function updateAssistant(userId, updates) {
 
   if (fetchError || !assistant) {
     throw new Error('Assistant not found');
+  }
+
+  // Check if the stored vapi_assistant_id is valid (not a mock ID)
+  // If invalid, recreate the assistant with a real Vapi ID first
+  if (!isValidVapiId(assistant.vapi_assistant_id)) {
+    console.log(`[Assistant] Invalid/mock vapi_assistant_id detected: ${assistant.vapi_assistant_id}`);
+    console.log('[Assistant] Auto-recreating assistant with real Vapi provider...');
+
+    try {
+      // Recreate will create a new real Vapi assistant and update the database
+      const recreated = await recreateVapiAssistant(userId);
+      // Update our local reference to use the new ID
+      assistant.vapi_assistant_id = recreated.vapiAssistant.id;
+      console.log(`[Assistant] Successfully recreated with real Vapi ID: ${assistant.vapi_assistant_id}`);
+    } catch (recreateError) {
+      console.error('[Assistant] Failed to auto-recreate assistant:', recreateError.message);
+      throw new Error(`Assistant has invalid ID and could not be recreated: ${recreateError.message}`);
+    }
   }
 
   // Get voice provider
@@ -727,6 +777,7 @@ module.exports = {
   syncEscalationToAssistant,
   syncBookingToolsToAssistant,
   recreateVapiAssistant,
+  isValidVapiId,
   VOICE_LIMITS,
   VAPI_VOICES
 };
