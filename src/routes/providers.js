@@ -1,6 +1,7 @@
 const express = require('express');
 const { authenticate } = require('../middleware/auth');
 const providerService = require('../services/providers');
+const { syncBookingToolsToAssistant } = require('../services/assistant');
 
 const router = express.Router();
 
@@ -197,6 +198,15 @@ router.post('/connections', authenticate, async (req, res, next) => {
     // Get fresh connection with provider details
     const fullConnection = await providerService.getConnection(req.userId, connection.id);
 
+    // Sync booking tools to assistant now that provider is connected
+    try {
+      await syncBookingToolsToAssistant(req.userId);
+      console.log(`[Providers] Synced booking tools for user ${req.userId} after connection`);
+    } catch (syncError) {
+      console.error('[Providers] Failed to sync booking tools:', syncError.message);
+      // Don't fail the request, just log the error
+    }
+
     res.status(201).json({
       success: true,
       connection: {
@@ -254,6 +264,16 @@ router.patch('/connections/:id', authenticate, async (req, res, next) => {
 router.delete('/connections/:id', authenticate, async (req, res, next) => {
   try {
     await providerService.deleteConnection(req.userId, req.params.id);
+
+    // Sync booking tools to assistant (remove tools if no more connected providers)
+    try {
+      await syncBookingToolsToAssistant(req.userId);
+      console.log(`[Providers] Synced booking tools for user ${req.userId} after disconnection`);
+    } catch (syncError) {
+      console.error('[Providers] Failed to sync booking tools:', syncError.message);
+      // Don't fail the request, just log the error
+    }
+
     res.json({ success: true });
   } catch (error) {
     next(error);
@@ -338,6 +358,15 @@ router.post('/:providerId/oauth/callback', authenticate, async (req, res, next) 
       code,
       redirectUri
     );
+
+    // Sync booking tools to assistant now that provider is connected via OAuth
+    try {
+      await syncBookingToolsToAssistant(req.userId);
+      console.log(`[Providers] Synced booking tools for user ${req.userId} after OAuth connection`);
+    } catch (syncError) {
+      console.error('[Providers] Failed to sync booking tools:', syncError.message);
+      // Don't fail the request, just log the error
+    }
 
     res.json({
       success: true,

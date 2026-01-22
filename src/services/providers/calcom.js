@@ -127,25 +127,32 @@ class CalcomAdapter extends BaseProviderAdapter {
    * Get availability for an event type
    */
   async getAvailability(eventTypeId, startDate, endDate) {
+    // Cal.com /slots endpoint requires ISO timestamps
+    const startISO = `${startDate}T00:00:00.000Z`;
+    const endISO = `${endDate}T23:59:59.999Z`;
+
     const response = await this.apiRequest(
       'GET',
-      `/availability?eventTypeId=${eventTypeId}&startTime=${startDate}T00:00:00Z&endTime=${endDate}T23:59:59Z`
+      `/slots?eventTypeId=${eventTypeId}&startTime=${startISO}&endTime=${endISO}`
     );
 
     const slots = [];
-    const busyTimes = response.busy || [];
-    const workingHours = response.workingHours || [];
 
-    // Cal.com returns busy times, we need to invert to get available slots
-    // This is a simplified implementation - production would need more sophisticated slot calculation
-    if (response.slots) {
-      for (const slot of response.slots) {
-        slots.push({
-          startTime: slot.time,
-          endTime: null, // Cal.com slots don't always include end time
-          available: true,
-          eventTypeId: eventTypeId,
-        });
+    // Cal.com /slots returns { slots: { "YYYY-MM-DD": [{ time: "..." }, ...] } }
+    if (response.slots && typeof response.slots === 'object') {
+      // Iterate over date keys
+      for (const dateKey of Object.keys(response.slots)) {
+        const daySlots = response.slots[dateKey];
+        if (Array.isArray(daySlots)) {
+          for (const slot of daySlots) {
+            slots.push({
+              startTime: slot.time,
+              endTime: null,
+              available: true,
+              eventTypeId: eventTypeId,
+            });
+          }
+        }
       }
     }
 

@@ -13,6 +13,7 @@ const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
 const notificationService = require('../services/notifications');
 const usageTracking = require('../services/usageTracking');
+const vapiTools = require('../services/vapiTools');
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -41,6 +42,12 @@ router.post('/webhook', express.json(), async (req, res) => {
 
     // Route to appropriate handler based on event type
     switch (message.type) {
+      case 'assistant-request':
+        // VAPI calls this at the start of each call to get assistant config
+        // We use this to inject the current date into the system prompt
+        const assistantResponse = await handleAssistantRequest(message);
+        return res.status(200).json(assistantResponse);
+
       case 'end-of-call-report':
         await handleEndOfCallReport(message);
         break;
@@ -79,8 +86,247 @@ router.post('/webhook', express.json(), async (req, res) => {
 });
 
 // ============================================
+// VAPI TOOLS TEST ENDPOINT (Development Only)
+// ============================================
+
+/**
+ * POST /api/vapi/tools/test
+ * Test endpoint for booking tools - bypasses authentication
+ * Use this to test tool functionality without making a phone call
+ *
+ * WARNING: This endpoint should be disabled in production!
+ */
+router.post('/tools/test', express.json(), async (req, res) => {
+  // Only allow in development
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ error: 'Test endpoint disabled in production' });
+  }
+
+  try {
+    const { userId, toolName, toolArgs, customerPhone } = req.body;
+
+    if (!userId || !toolName) {
+      return res.status(400).json({
+        error: 'userId and toolName are required',
+        example: {
+          userId: 'your-user-uuid',
+          toolName: 'check_availability',
+          toolArgs: { date: '2024-01-20' },
+          customerPhone: '+1234567890'
+        }
+      });
+    }
+
+    console.log(`[Vapi Tools Test] Testing tool: ${toolName}`, toolArgs);
+
+    // Build call context
+    const callContext = {
+      callId: `test-${Date.now()}`,
+      customerPhone: customerPhone || '+15551234567',
+      assistantId: 'test-assistant',
+    };
+
+    // Execute the tool
+    const result = await vapiTools.handleToolCall(userId, toolName, toolArgs || {}, callContext);
+
+    console.log(`[Vapi Tools Test] Result:`, result);
+
+    res.json({
+      success: true,
+      toolName,
+      toolArgs,
+      result,
+    });
+  } catch (error) {
+    console.error('[Vapi Tools Test] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// ============================================
+// VAPI TOOLS ENDPOINT
+// ============================================
+
+/**
+ * POST /api/vapi/tools
+ * Handle tool calls from VAPI for booking operations
+ * This endpoint is called by VAPI when the assistant invokes a tool
+ */
+router.post('/tools', express.json(), async (req, res) => {
+  try {
+    const { message } = req.body;
+
+    if (!message) {
+      console.warn('[Vapi Tools] Invalid tool call payload:', req.body);
+      return res.status(400).json({ error: 'Invalid payload' });
+    }
+
+    // Extract tool call information
+    const toolCall = message.toolCalls?.[0];
+    const call = message.call;
+
+    if (!toolCall) {
+      console.warn('[Vapi Tools] No tool call in message');
+      return res.status(400).json({ error: 'No tool call found' });
+    }
+
+    const toolName = toolCall.function?.name;
+    const toolArgs = typeof toolCall.function?.arguments === 'string'
+      ? JSON.parse(toolCall.function.arguments)
+      : toolCall.function?.arguments || {};
+
+    console.log(`[Vapi Tools] Tool call: ${toolName}`, toolArgs);
+
+    // Find the user associated with this call
+    const userId = await findUserForCall(call);
+
+    if (!userId) {
+      console.warn(`[Vapi Tools] Could not find user for call: ${call?.id}`);
+      return res.json({
+        results: [{
+          toolCallId: toolCall.id,
+          result: JSON.stringify({
+            success: false,
+            error: 'Could not identify user for this call',
+          }),
+        }],
+      });
+    }
+
+    // Build call context for the tool handler
+    const callContext = {
+      callId: call?.id,
+      customerPhone: call?.customer?.number,
+      assistantId: call?.assistantId,
+    };
+
+    // Execute the tool through the vapiTools service
+    const result = await vapiTools.handleToolCall(userId, toolName, toolArgs, callContext);
+
+    console.log(`[Vapi Tools] Tool result:`, result);
+
+    // Return result in VAPI expected format
+    res.json({
+      results: [{
+        toolCallId: toolCall.id,
+        result: JSON.stringify(result),
+      }],
+    });
+  } catch (error) {
+    console.error('[Vapi Tools] Error handling tool call:', error);
+    res.json({
+      results: [{
+        toolCallId: req.body?.message?.toolCalls?.[0]?.id || 'unknown',
+        result: JSON.stringify({
+          success: false,
+          error: 'An error occurred while processing your request',
+        }),
+      }],
+    });
+  }
+});
+
+// ============================================
 // EVENT HANDLERS
 // ============================================
+
+/**
+ * Handle assistant-request event
+ * VAPI calls this at the START of each call to get the assistant configuration.
+ * We use this to dynamically inject the current date into the system prompt.
+ */
+async function handleAssistantRequest(message) {
+  const { call } = message;
+
+  console.log(`[Vapi Webhook] Assistant request for call from: ${call?.customer?.number || 'unknown'}`);
+
+  try {
+    // Find the user from the phone number or assistant ID
+    const phoneNumberId = call?.phoneNumberId;
+    const assistantId = call?.assistantId;
+
+    let userId = null;
+    let assistant = null;
+
+    // Try to get assistant info from our database
+    if (assistantId) {
+      const { data } = await supabase
+        .from('user_assistants')
+        .select('*, users(email)')
+        .eq('vapi_assistant_id', assistantId)
+        .single();
+
+      if (data) {
+        userId = data.user_id;
+        assistant = data;
+      }
+    }
+
+    // If we found the assistant, inject current date into system prompt
+    if (assistant) {
+      const now = new Date();
+      const currentDate = now.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+      // Build the date-aware system prompt
+      const datePrefix = `IMPORTANT: Today is ${currentDate}. The current timezone is ${timezone}. Use this as the reference for "today", "tomorrow", "next week", etc.\n\n`;
+
+      const originalPrompt = assistant.system_prompt || '';
+      const enhancedPrompt = datePrefix + originalPrompt;
+
+      console.log(`[Vapi Webhook] Injecting current date (${currentDate}) into assistant prompt`);
+
+      // Get booking tools if user has connected provider
+      let tools = [];
+      try {
+        const { data: connections } = await supabase
+          .from('provider_connections')
+          .select('status')
+          .eq('user_id', userId)
+          .eq('status', 'connected');
+
+        if (connections && connections.length > 0) {
+          const serverUrl = process.env.VAPI_SERVER_URL || process.env.API_BASE_URL || 'https://dev.voicefleet.ai';
+          tools = vapiTools.getBookingToolDefinitions(serverUrl);
+          console.log(`[Vapi Webhook] Including ${tools.length} booking tools`);
+        }
+      } catch (toolsError) {
+        console.error('[Vapi Webhook] Error fetching booking tools:', toolsError);
+      }
+
+      // Return the assistant configuration with updated prompt and tools
+      return {
+        assistant: {
+          firstMessage: assistant.first_message,
+          model: {
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            temperature: 0.7,
+            messages: [{ role: 'system', content: enhancedPrompt }],
+            tools: tools
+          },
+          voice: {
+            provider: assistant.voice_provider || 'vapi',
+            voiceId: assistant.voice_id || 'Jess'
+          }
+        }
+      };
+    }
+  } catch (error) {
+    console.error('[Vapi Webhook] Error in assistant-request:', error);
+  }
+
+  // If anything fails, return empty to use default assistant config
+  return {};
+}
 
 /**
  * Handle end-of-call-report event
