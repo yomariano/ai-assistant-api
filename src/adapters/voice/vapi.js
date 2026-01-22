@@ -97,17 +97,14 @@ class VapiProvider {
 
   /**
    * Update a voice assistant
+   * IMPORTANT: VAPI requires the full model object when updating model properties.
+   * We must fetch current config, merge updates, then send complete model.
    */
   async updateAssistant(assistantId, updates) {
     const payload = {};
 
     if (updates.name) payload.name = updates.name;
     if (updates.firstMessage) payload.firstMessage = updates.firstMessage;
-    if (updates.systemPrompt) {
-      payload.model = {
-        messages: [{ role: 'system', content: updates.systemPrompt }],
-      };
-    }
     if (updates.voice) {
       payload.voice = {
         provider: updates.voice.provider,
@@ -115,14 +112,81 @@ class VapiProvider {
       };
     }
 
-    // Handle escalation settings - add or remove transfer tool
-    if (updates.escalationSettings !== undefined) {
-      payload.model = payload.model || {};
-      if (updates.escalationSettings?.transfer_enabled && updates.escalationSettings?.transfer_number) {
-        payload.model.tools = [this._buildTransferCallTool(updates.escalationSettings)];
-      } else {
-        // Remove transfer tools by setting empty array
-        payload.model.tools = [];
+    // If updating systemPrompt, escalationSettings, or tools - we need to preserve existing model config
+    const needsModelUpdate = updates.systemPrompt || updates.escalationSettings !== undefined || updates.tools;
+
+    if (needsModelUpdate) {
+      // Fetch current assistant to get existing model config
+      let currentModel = {
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        temperature: 0.7,
+        messages: [],
+        tools: []
+      };
+
+      try {
+        const current = await this.getAssistant(assistantId);
+        if (current?.model) {
+          currentModel = {
+            provider: current.model.provider || 'openai',
+            model: current.model.model || 'gpt-4o-mini',
+            temperature: current.model.temperature ?? 0.7,
+            messages: current.model.messages || [],
+            tools: current.model.tools || []
+          };
+        }
+      } catch (err) {
+        console.log('[Vapi] Could not fetch current assistant, using defaults');
+      }
+
+      // Always prepend current date to system prompt so AI knows what day it is
+      const now = new Date();
+      const currentDate = now.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+      const datePrefix = `IMPORTANT: Today is ${currentDate}. Use this as the reference for "today", "tomorrow", "next week", etc.
+
+SPEECH RULES: Always speak dates naturally (e.g., "Thursday, January twenty-second", NOT "22-01-2026"). Say times as "five PM" not "17:00". Spell confirmation codes phonetically (e.g., "A as in Alpha, B as in Bravo").
+
+`;
+
+      // Get the prompt content (new or existing)
+      let promptContent = updates.systemPrompt || currentModel.messages?.[0]?.content || '';
+
+      // Remove any existing date prefix (to avoid duplicates)
+      promptContent = promptContent.replace(/^IMPORTANT: Today is [^.]+\. Use this as the reference[^\n]*\n\n/i, '');
+
+      // Prepend fresh date
+      const finalPrompt = datePrefix + promptContent;
+
+      // Build updated model
+      payload.model = {
+        provider: currentModel.provider,
+        model: currentModel.model,
+        temperature: currentModel.temperature,
+        messages: [{ role: 'system', content: finalPrompt }],
+        tools: currentModel.tools // Preserve existing tools
+      };
+
+      // Handle escalation settings - add or update transfer tool
+      if (updates.escalationSettings !== undefined) {
+        if (updates.escalationSettings?.transfer_enabled && updates.escalationSettings?.transfer_number) {
+          // Add transfer tool, keeping other tools
+          const nonTransferTools = payload.model.tools.filter(t => t.function?.name !== 'transferCall');
+          payload.model.tools = [...nonTransferTools, this._buildTransferCallTool(updates.escalationSettings)];
+        } else {
+          // Remove only transfer tools, keep booking tools etc.
+          payload.model.tools = payload.model.tools.filter(t => t.function?.name !== 'transferCall');
+        }
+      }
+
+      // If explicit tools array provided, use it
+      if (updates.tools) {
+        payload.model.tools = updates.tools;
       }
     }
 

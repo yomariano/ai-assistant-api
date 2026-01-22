@@ -28,7 +28,7 @@ router.get('/', authenticate, async (req, res, next) => {
       });
     }
 
-    // Get available voices based on plan
+    // Get available Vapi voices based on plan
     const subscription = await getSubscription(req.userId);
     const planId = subscription?.plan_id || 'starter';
     const availableVoices = getAvailableVoices(planId);
@@ -157,7 +157,8 @@ router.get('/voices', authenticate, async (req, res, next) => {
         id: assistant.voice_id,
         provider: assistant.voice_provider
       } : null,
-      planId
+      planId,
+      provider: 'vapi' // Vapi native voices
     });
   } catch (error) {
     next(error);
@@ -173,11 +174,22 @@ router.post('/regenerate-prompt', authenticate, async (req, res, next) => {
     const { businessName, businessDescription, greetingName } = req.body;
 
     const { buildSystemPrompt } = require('../services/assistant');
+    const providerService = require('../services/providers');
+
+    // Check if user has connected booking providers
+    let hasBookingProvider = false;
+    try {
+      const connections = await providerService.getConnections(req.userId);
+      hasBookingProvider = connections.some(c => c.status === 'connected');
+    } catch (err) {
+      // No connections
+    }
 
     const systemPrompt = buildSystemPrompt({
       businessName: businessName || '',
       businessDescription: businessDescription || '',
-      greetingName: greetingName || 'your AI assistant'
+      greetingName: greetingName || 'your AI assistant',
+      hasBookingProvider
     });
 
     res.json({ systemPrompt });

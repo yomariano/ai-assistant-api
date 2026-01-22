@@ -2,9 +2,24 @@ const { supabaseAdmin } = require('./supabase');
 const { getPlanLimits } = require('./stripe');
 const { getVoiceProvider } = require('../adapters/voice');
 const { getEscalationSettings } = require('./notifications');
+const vapiTools = require('./vapiTools');
+const providerService = require('./providers');
+
+/**
+ * Vapi native voices - high quality, low latency
+ */
+const VAPI_VOICES = [
+  { id: 'Savannah', provider: 'vapi', name: 'Savannah', gender: 'female', accent: 'american', description: 'friendly' },
+  { id: 'Rohan', provider: 'vapi', name: 'Rohan', gender: 'male', accent: 'american', description: 'warm' },
+  { id: 'Lily', provider: 'vapi', name: 'Lily', gender: 'female', accent: 'british', description: 'natural' },
+  { id: 'Elliot', provider: 'vapi', name: 'Elliot', gender: 'male', accent: 'american', description: 'conversational' },
+  { id: 'Cole', provider: 'vapi', name: 'Cole', gender: 'male', accent: 'american', description: 'professional' },
+  { id: 'Paige', provider: 'vapi', name: 'Paige', gender: 'female', accent: 'american', description: 'clear' },
+];
 
 /**
  * Default assistant template - customize based on your use case
+ * Using Vapi native voices for low latency and high quality
  */
 const DEFAULT_ASSISTANT_TEMPLATE = {
   transcriber: {
@@ -20,7 +35,7 @@ const DEFAULT_ASSISTANT_TEMPLATE = {
   },
   voice: {
     provider: 'vapi',
-    voiceId: 'Elliot' // Vapi native voice - natural conversational male
+    voiceId: 'Savannah' // Savannah - friendly female voice
   },
   firstMessageMode: 'assistant-speaks-first',
   silenceTimeoutSeconds: 30,
@@ -31,30 +46,21 @@ const DEFAULT_ASSISTANT_TEMPLATE = {
 };
 
 /**
- * Voice options by plan tier
- * Using Vapi native voices - valid IDs: Elliot, Kylie, Rohan, Lily, Savannah,
- * Hana, Neha, Cole, Harry, Paige, Spencer, Leah, Tara, Jess, Leo, Dan, Mia, Zac, Zoe
+ * Get available Vapi voices
  */
-const VOICE_OPTIONS = {
-  starter: [
-    { id: 'Elliot', provider: 'vapi', name: 'Elliot (Male, Conversational)' },
-    { id: 'Jess', provider: 'vapi', name: 'Jess (Female, Conversational)' }
-  ],
-  growth: [
-    { id: 'Elliot', provider: 'vapi', name: 'Elliot (Male, Conversational)' },
-    { id: 'Jess', provider: 'vapi', name: 'Jess (Female, Conversational)' },
-    { id: 'Cole', provider: 'vapi', name: 'Cole (Male, Professional)' },
-    { id: 'Savannah', provider: 'vapi', name: 'Savannah (Female, Friendly)' },
-    { id: 'Rohan', provider: 'vapi', name: 'Rohan (Male, Warm)' }
-  ],
-  scale: [
-    { id: 'Elliot', provider: 'vapi', name: 'Elliot (Male, Conversational)' },
-    { id: 'Jess', provider: 'vapi', name: 'Jess (Female, Conversational)' },
-    { id: 'Cole', provider: 'vapi', name: 'Cole (Male, Professional)' },
-    { id: 'Savannah', provider: 'vapi', name: 'Savannah (Female, Friendly)' },
-    { id: 'Rohan', provider: 'vapi', name: 'Rohan (Male, Warm)' },
-    { id: 'Lily', provider: 'vapi', name: 'Lily (Female, Natural)' }
-  ]
+function getVapiVoices() {
+  return VAPI_VOICES;
+}
+
+/**
+ * Voice limits by plan tier
+ * All plans get Vapi native voices (6 total available)
+ */
+const VOICE_LIMITS = {
+  starter: 3,    // 3 voices
+  pro: 4,        // 4 voices
+  business: 6,   // All 6 voices
+  agency: 6      // All voices
 };
 
 /**
@@ -80,12 +86,29 @@ async function createAssistantForUser(userId, options = {}) {
     // No escalation settings yet, that's fine
   }
 
-  // Build system prompt
+  // Check for connected booking providers and get booking tools
+  let bookingTools = [];
+  let hasBookingProvider = false;
+  try {
+    const connections = await providerService.getConnections(userId);
+    hasBookingProvider = connections.some(c => c.status === 'connected');
+    if (hasBookingProvider) {
+      // Get server URL from environment for tool callbacks
+      const serverUrl = process.env.VAPI_SERVER_URL || process.env.API_BASE_URL || 'https://dev.voicefleet.ai';
+      bookingTools = vapiTools.getBookingToolDefinitions(serverUrl);
+      console.log(`[Assistant] User has connected booking provider, adding ${bookingTools.length} booking tools`);
+    }
+  } catch (err) {
+    console.log('[Assistant] No booking providers connected, skipping booking tools');
+  }
+
+  // Build system prompt with booking capabilities if provider is connected
   const systemPrompt = buildSystemPrompt({
     businessName,
     businessDescription,
     greetingName,
-    escalationSettings
+    escalationSettings,
+    hasBookingProvider
   });
 
   // Build first message
@@ -97,6 +120,8 @@ async function createAssistantForUser(userId, options = {}) {
     name: `Assistant-${userId.slice(0, 8)}`,
     firstMessage,
     systemPrompt,
+    // Include booking tools if provider is connected
+    ...(bookingTools.length > 0 && { tools: bookingTools }),
     // Include escalation settings for transfer call tool
     ...(escalationSettings?.transfer_enabled && { escalationSettings }),
   };
@@ -147,7 +172,25 @@ async function createAssistantForUser(userId, options = {}) {
 /**
  * Build system prompt for the assistant
  */
-function buildSystemPrompt({ businessName, businessDescription, greetingName, escalationSettings }) {
+function buildSystemPrompt({ businessName, businessDescription, greetingName, escalationSettings, hasBookingProvider }) {
+  // Always include current date so the AI knows what day it is
+  const now = new Date();
+  const currentDate = now.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
+  const bookingBlock = hasBookingProvider ? `
+
+Booking Capabilities:
+- You can check availability and book appointments for customers
+- When a customer wants to book, use the check_availability tool to see available times
+- Always confirm the date, time, and customer name before creating a booking
+- After booking, provide the confirmation number to the customer
+- You can also help customers look up, modify, or cancel existing bookings` : '';
+
   const escalationBlock = (() => {
     if (!escalationSettings) return '';
 
@@ -186,6 +229,8 @@ ${afterHoursAction === 'callback_promise' ? `- Collect name, phone number, and r
 
   return `You are ${greetingName}, a helpful and friendly AI assistant${businessName ? ` for ${businessName}` : ''}.
 
+IMPORTANT: Today is ${currentDate}. Always use this as the reference for "today", "tomorrow", "next week", etc.
+
 ${businessDescription ? `About the business: ${businessDescription}` : ''}
 
 Your role is to:
@@ -200,7 +245,15 @@ Guidelines:
 - If you don't know something, say so honestly
 - Always confirm important details back to the caller
 
-Remember: You're having a phone conversation, so speak naturally and avoid long monologues.${escalationBlock}`;
+SPEECH RULES (Critical for natural phone conversation):
+- DATES: Always say dates naturally like "Thursday, January twenty-second" or "the twenty-second of January", NEVER as numbers like "22-01-2026" or "01/22/2026"
+- TIMES: Say "five PM" or "five o'clock in the afternoon", NEVER "17:00" or "1700 hours"
+- PHONE NUMBERS: Say each digit clearly with pauses, like "three five three, eight five one, two three four five"
+- PRICES: Say "twenty-five euros" or "twenty-five dollars and fifty cents", not "€25" or "$25.50"
+- CONFIRMATIONS: Say "B as in Bravo, C as in Charlie" when spelling reference numbers
+- ADDRESSES: Read street numbers digit by digit if long (e.g., "one two three four Main Street")
+
+Remember: You're having a phone conversation, so speak naturally and avoid long monologues.${bookingBlock}${escalationBlock}`;
 }
 
 /**
@@ -436,9 +489,12 @@ async function deleteAssistant(userId) {
 
 /**
  * Get available voices for a plan
+ * Returns Vapi native voices limited by plan tier
  */
 function getAvailableVoices(planId) {
-  return VOICE_OPTIONS[planId] || VOICE_OPTIONS.starter;
+  const allVoices = getVapiVoices();
+  const limit = VOICE_LIMITS[planId] || VOICE_LIMITS.starter;
+  return allVoices.slice(0, limit);
 }
 
 /**
@@ -469,6 +525,20 @@ async function recreateVapiAssistant(userId) {
     // No escalation settings, that's fine
   }
 
+  // Check for connected booking providers and get booking tools
+  let bookingTools = [];
+  try {
+    const connections = await providerService.getConnections(userId);
+    const hasBookingProvider = connections.some(c => c.status === 'connected');
+    if (hasBookingProvider) {
+      const serverUrl = process.env.VAPI_SERVER_URL || process.env.API_BASE_URL || 'https://dev.voicefleet.ai';
+      bookingTools = vapiTools.getBookingToolDefinitions(serverUrl);
+      console.log(`[Assistant] Recreating with ${bookingTools.length} booking tools`);
+    }
+  } catch (err) {
+    console.log('[Assistant] No booking providers for recreation, skipping booking tools');
+  }
+
   // Check if the stored voice is valid (not old playht)
   const storedVoiceProvider = assistant.voice_provider;
   const storedVoiceId = assistant.voice_id;
@@ -485,6 +555,8 @@ async function recreateVapiAssistant(userId) {
       provider: storedVoiceProvider,
       voiceId: storedVoiceId
     } : DEFAULT_ASSISTANT_TEMPLATE.voice,
+    // Include booking tools if provider is connected
+    ...(bookingTools.length > 0 && { tools: bookingTools }),
     ...(escalationSettings?.transfer_enabled && { escalationSettings }),
   };
 
@@ -569,6 +641,79 @@ async function syncEscalationToAssistant(userId) {
   }
 }
 
+/**
+ * Sync booking tools to the assistant when provider connections change
+ * Call this when a booking provider is connected or disconnected
+ */
+async function syncBookingToolsToAssistant(userId) {
+  // Get assistant
+  const { data: assistant } = await supabaseAdmin
+    .from('user_assistants')
+    .select('vapi_assistant_id, system_prompt, business_name, business_description, greeting_name')
+    .eq('user_id', userId)
+    .single();
+
+  if (!assistant?.vapi_assistant_id) {
+    console.log(`[Assistant] No assistant found for user ${userId}, skipping booking tools sync`);
+    return;
+  }
+
+  // Check for connected booking providers
+  let bookingTools = [];
+  let hasBookingProvider = false;
+  try {
+    const connections = await providerService.getConnections(userId);
+    hasBookingProvider = connections.some(c => c.status === 'connected');
+    if (hasBookingProvider) {
+      const serverUrl = process.env.VAPI_SERVER_URL || process.env.API_BASE_URL || 'https://dev.voicefleet.ai';
+      bookingTools = vapiTools.getBookingToolDefinitions(serverUrl);
+    }
+  } catch (err) {
+    // No connections, use empty tools
+  }
+
+  // Get escalation settings
+  let escalationSettings = null;
+  try {
+    escalationSettings = await getEscalationSettings(userId);
+  } catch (err) {
+    // No settings
+  }
+
+  // Rebuild system prompt with updated booking capabilities
+  const newSystemPrompt = buildSystemPrompt({
+    businessName: assistant.business_name || 'our company',
+    businessDescription: assistant.business_description || '',
+    greetingName: assistant.greeting_name || 'your AI assistant',
+    escalationSettings,
+    hasBookingProvider
+  });
+
+  const voiceProvider = getVoiceProvider();
+
+  try {
+    // Update assistant with new tools and system prompt
+    await voiceProvider.updateAssistant(assistant.vapi_assistant_id, {
+      systemPrompt: newSystemPrompt,
+      tools: bookingTools, // Will be empty if no provider connected
+    });
+
+    // Update system prompt in database
+    await supabaseAdmin
+      .from('user_assistants')
+      .update({
+        system_prompt: newSystemPrompt,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', userId);
+
+    console.log(`[Assistant] Synced booking tools for user ${userId}: ${bookingTools.length} tools`);
+  } catch (error) {
+    console.error('[Assistant] Failed to sync booking tools:', error.message);
+    throw error;
+  }
+}
+
 module.exports = {
   createAssistantForUser,
   updateAssistant,
@@ -577,8 +722,11 @@ module.exports = {
   syncAssistantToPhoneNumbers,
   deleteAssistant,
   getAvailableVoices,
+  getVapiVoices,
   buildSystemPrompt,
   syncEscalationToAssistant,
+  syncBookingToolsToAssistant,
   recreateVapiAssistant,
-  VOICE_OPTIONS
+  VOICE_LIMITS,
+  VAPI_VOICES
 };
