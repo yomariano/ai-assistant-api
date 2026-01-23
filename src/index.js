@@ -24,12 +24,14 @@ const emailRoutes = require('./routes/email');
 const publicLiveDemoRoutes = require('./routes/publicLiveDemo');
 const templatesRoutes = require('./routes/templates');
 const onboardingRoutes = require('./routes/onboarding');
+const campaignRoutes = require('./routes/campaigns');
 
 // Import scheduled jobs
 const { startScheduledCallsJob } = require('./jobs/scheduledCalls');
 const { startProvisioningRetryJob } = require('./jobs/provisioningRetry');
 const { startNumberPoolMaintenanceJob } = require('./jobs/numberPoolMaintenance');
 const { startSeoContentGenerationJob } = require('./jobs/seoContentGeneration');
+const { startEmailTriggersJob } = require('./jobs/emailTriggers');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -99,6 +101,7 @@ app.use('/api/email', emailRoutes);
 app.use('/api/public/live-demo', publicLiveDemoRoutes);
 app.use('/api/templates', templatesRoutes);
 app.use('/api/onboarding', onboardingRoutes);
+app.use('/api/admin', campaignRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -125,4 +128,5 @@ app.listen(PORT, () => {
   startProvisioningRetryJob();
   startNumberPoolMaintenanceJob();
   startSeoContentGenerationJob();
+  startEmailTriggersJob();
 });

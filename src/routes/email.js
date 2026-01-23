@@ -15,6 +15,61 @@ const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
+// ============================================
+// EVENT TRACKING
+// ============================================
+
+/**
+ * POST /api/email/track-event
+ * Track user events for email trigger matching
+ * Body: { eventType, eventData?, pageUrl?, referrer? }
+ */
+router.post('/track-event', authenticate, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { eventType, eventData, pageUrl, referrer } = req.body;
+
+    if (!eventType) {
+      return res.status(400).json({ error: { message: 'eventType is required' } });
+    }
+
+    // Valid event types
+    const validEvents = ['pricing_view', 'upgrade_started', 'feature_used', 'dashboard_view', 'settings_view'];
+    if (!validEvents.includes(eventType)) {
+      return res.status(400).json({
+        error: { message: `Invalid eventType. Valid types: ${validEvents.join(', ')}` },
+      });
+    }
+
+    // Insert the event
+    const { data, error } = await supabaseAdmin
+      .from('user_events')
+      .insert({
+        user_id: userId,
+        event_type: eventType,
+        event_data: eventData || {},
+        page_url: pageUrl,
+        referrer,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[Email Routes] Error tracking event:', error);
+      return res.status(500).json({ error: { message: error.message } });
+    }
+
+    res.json({ success: true, eventId: data.id });
+  } catch (error) {
+    console.error('[Email Routes] Track event error:', error);
+    res.status(500).json({ error: { message: error.message } });
+  }
+});
+
+// ============================================
+// EMAIL STATUS & SENDING
+// ============================================
+
 /**
  * GET /api/email/status
  * Check if email service is configured
