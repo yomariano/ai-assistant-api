@@ -342,12 +342,20 @@ async function handleEndOfCallReport(message) {
 
   console.log(`[Vapi Webhook] Call ended: ${call.id}, reason: ${call.endedReason}`);
 
+  // Calculate duration from timestamps (Vapi doesn't provide duration directly)
+  let durationSeconds = null;
+  if (call.startedAt && call.endedAt) {
+    const start = new Date(call.startedAt);
+    const end = new Date(call.endedAt);
+    durationSeconds = Math.round((end - start) / 1000);
+  }
+
   // Extract call data
   const callData = {
     vapiCallId: call.id,
     status: call.status || 'ended',
     endedReason: call.endedReason,
-    duration: call.duration || 0,
+    duration: durationSeconds,
     cost: call.cost || 0,
     customerNumber: call.customer?.number,
     phoneNumberId: call.phoneNumberId,
@@ -741,7 +749,9 @@ async function updateCallHistory(vapiCallId, callData, userId = null) {
           vapi_call_id: vapiCallId,
           status: 'completed',
           duration_seconds: callData.duration,
+          vapi_cost_cents: Math.round((callData.cost || 0) * 100),
           transcript: callData.transcript,
+          summary: callData.summary,
           recording_url: callData.recordingUrl,
           ended_reason: callData.endedReason,
           ended_at: new Date().toISOString(),
@@ -760,7 +770,7 @@ async function updateCallHistory(vapiCallId, callData, userId = null) {
       .update({
         status: 'completed',
         duration_seconds: callData.duration,
-        cost: callData.cost,
+        vapi_cost_cents: Math.round((callData.cost || 0) * 100),
         transcript: callData.transcript,
         summary: callData.summary,
         recording_url: callData.recordingUrl,
