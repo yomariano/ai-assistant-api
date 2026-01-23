@@ -439,25 +439,31 @@ async function handleStatusUpdate(message) {
   if (!call) return;
 
   console.log(`[Vapi Webhook] Status update: ${call.id} -> ${call.status}`);
+  console.log(`[Vapi Webhook] Call details - phoneNumberId: ${call.phoneNumberId}, assistantId: ${call.assistantId}, customer: ${call.customer?.number}`);
 
   // Check if call record exists
   let existingCall = null;
   try {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('call_history')
       .select('id')
       .eq('vapi_call_id', call.id)
       .single();
-    existingCall = data;
+
+    if (!error) {
+      existingCall = data;
+    }
+    // PGRST116 = no rows returned, which is expected for new inbound calls
   } catch (e) {
-    // Record doesn't exist, will create below
+    console.error('[Vapi Webhook] Error checking for existing call:', e);
   }
 
   // If no record exists (inbound call), create one
   if (!existingCall) {
+    console.log(`[Vapi Webhook] No existing call record found, looking up user...`);
     const userId = await findUserForCall(call);
     if (userId) {
-      console.log(`[Vapi Webhook] Creating call_history record for inbound call: ${call.id}`);
+      console.log(`[Vapi Webhook] Creating call_history record for inbound call: ${call.id}, user: ${userId}`);
       try {
         const { error: insertError } = await supabase
           .from('call_history')
@@ -478,6 +484,7 @@ async function handleStatusUpdate(message) {
       }
     } else {
       console.warn(`[Vapi Webhook] Cannot create call record - no user found for call: ${call.id}`);
+      console.warn(`[Vapi Webhook] Lookup attempted with: phoneNumberId=${call.phoneNumberId}, assistantId=${call.assistantId}`);
     }
     return;
   }
@@ -628,17 +635,19 @@ async function handleHang(message) {
  */
 async function findUserForCall(call) {
   // Try to find by phoneNumberId in user_phone_numbers
+  // Note: Vapi sends phoneNumberId, which maps to vapi_id column in our DB
   if (call.phoneNumberId) {
     try {
       const { data: phoneNumber, error } = await supabase
         .from('user_phone_numbers')
         .select('user_id')
-        .eq('vapi_phone_id', call.phoneNumberId)
+        .eq('vapi_id', call.phoneNumberId)
         .single();
 
       if (error) {
         console.error('[Vapi Webhook] Failed to lookup user by phoneNumberId:', error);
       } else if (phoneNumber?.user_id) {
+        console.log(`[Vapi Webhook] Found user ${phoneNumber.user_id} by phone number`);
         return phoneNumber.user_id;
       }
     } catch (queryError) {
