@@ -1,6 +1,15 @@
 const Stripe = require('stripe');
 const { supabaseAdmin } = require('./supabase');
 
+// Lazy load planConfig to avoid circular dependency
+let planConfigService = null;
+function getPlanConfigService() {
+  if (!planConfigService) {
+    planConfigService = require('./planConfig');
+  }
+  return planConfigService;
+}
+
 // Determine Stripe mode from environment
 const STRIPE_MODE = process.env.STRIPE_MODE || 'test';
 const isLiveMode = STRIPE_MODE === 'live';
@@ -774,9 +783,32 @@ async function createOverageInvoiceItem(customerId, overageMinutes, overageRate,
 
 /**
  * Get plan limits by plan ID
+ * Uses database-driven planConfig with fallback to hardcoded values
  */
 function getPlanLimits(planId) {
   return PLAN_LIMITS[planId] || PLAN_LIMITS.starter;
+}
+
+/**
+ * Get plan limits from database (async version)
+ * @param {string} planId - Plan identifier
+ * @returns {Promise<Object>} Plan limits
+ */
+async function getPlanLimitsAsync(planId) {
+  try {
+    const config = await getPlanConfigService().getPlanConfig(planId);
+    return {
+      minutesIncluded: 0,  // Not used in per-call model
+      phoneNumbers: config.phoneNumbers,
+      maxConcurrentCalls: config.phoneNumbers * 2,  // 2x phone numbers
+      maxMinutesPerCall: config.maxMinutesPerCall,
+      callsCap: config.callsCap,
+      hoursType: 'all'  // 24/7 for AI
+    };
+  } catch (err) {
+    console.warn('[Stripe] Falling back to hardcoded limits:', err.message);
+    return PLAN_LIMITS[planId] || PLAN_LIMITS.starter;
+  }
 }
 
 /**
@@ -807,6 +839,7 @@ module.exports = {
   calculateOverage,
   createOverageInvoiceItem,
   getPlanLimits,
+  getPlanLimitsAsync,  // Database-driven version
   getOverageRate,
   PLAN_LIMITS,
   OVERAGE_RATES,

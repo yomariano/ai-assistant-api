@@ -41,7 +41,13 @@ router.get('/', async (req, res, next) => {
       status: call.status,
       durationSeconds: call.duration_seconds,
       createdAt: call.created_at,
-      endedAt: call.ended_at
+      endedAt: call.ended_at,
+      // Vapi call details
+      transcript: call.transcript,
+      summary: call.summary,
+      recordingUrl: call.recording_url,
+      endedReason: call.ended_reason,
+      costCents: call.cost_cents
     })));
   } catch (error) {
     next(error);
@@ -75,7 +81,13 @@ router.get('/:id', async (req, res, next) => {
       durationSeconds: call.duration_seconds,
       vapiCallId: call.vapi_call_id,
       createdAt: call.created_at,
-      endedAt: call.ended_at
+      endedAt: call.ended_at,
+      // Vapi call details
+      transcript: call.transcript,
+      summary: call.summary,
+      recordingUrl: call.recording_url,
+      endedReason: call.ended_reason,
+      costCents: call.cost_cents
     });
   } catch (error) {
     next(error);

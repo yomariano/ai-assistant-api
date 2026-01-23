@@ -5,30 +5,32 @@
  * - Lite (starter): €19/mo + €0.95/call
  * - Growth: €99/mo + €0.45/call
  * - Pro (scale): €249/mo + €0/call (1500 fair use cap)
+ *
+ * Plan configuration is now loaded from the database via planConfig service.
  */
 
 const { supabaseAdmin } = require('./supabase');
 const { getPricingForRegion, getRegionConfig } = require('./geoLocation');
 const { sendUsageAlertEmail, isEmailConfigured } = require('./emailService');
+const planConfig = require('./planConfig');
 
 // Alert thresholds for usage notifications
 const ALERT_THRESHOLDS = [80, 100]; // Notify at 80% and 100%
 
-// Per-call rates in cents by plan
+// Legacy constants for backwards compatibility (deprecated - use planConfig instead)
+// These will be removed in a future version
 const PER_CALL_RATES = {
   starter: 95,   // €0.95
   growth: 45,    // €0.45
   scale: 0       // €0 (unlimited)
 };
 
-// Fair use caps (calls per month)
 const FAIR_USE_CAPS = {
   starter: null,  // No cap (pay per call)
   growth: null,   // No cap (pay per call)
   scale: 1500     // 1500 calls/month fair use
 };
 
-// Phone numbers included per plan
 const PHONE_LIMITS = {
   starter: 1,
   growth: 2,
@@ -37,11 +39,21 @@ const PHONE_LIMITS = {
 
 /**
  * Get per-call rate for a plan (in cents)
+ * Now reads from database via planConfig service
  * @param {string} planId - Plan identifier
- * @param {string} region - Region code (US or IE)
- * @returns {number} Per-call rate in cents
+ * @param {string} region - Region code (US or IE) - kept for API compatibility
+ * @returns {Promise<number>} Per-call rate in cents
  */
-function getPerCallRate(planId, region = 'IE') {
+async function getPerCallRate(planId, region = 'IE') {
+  // Try to get from database first
+  try {
+    const rate = await planConfig.getPerCallRate(planId);
+    return rate;
+  } catch (err) {
+    console.warn('[UsageTracking] Falling back to hardcoded rate:', err.message);
+  }
+
+  // Fallback to region config or hardcoded values
   const config = getRegionConfig(region);
   const plan = config.plans[planId];
 
@@ -54,10 +66,20 @@ function getPerCallRate(planId, region = 'IE') {
 
 /**
  * Get fair use cap for a plan
+ * Now reads from database via planConfig service
  * @param {string} planId - Plan identifier
- * @returns {number|null} Cap or null if no cap
+ * @returns {Promise<number|null>} Cap or null if no cap
  */
-function getFairUseCap(planId) {
+async function getFairUseCap(planId) {
+  // Try to get from database first
+  try {
+    const cap = await planConfig.getFairUseCap(planId);
+    return cap;
+  } catch (err) {
+    console.warn('[UsageTracking] Falling back to hardcoded cap:', err.message);
+  }
+
+  // Fallback to region config or hardcoded values
   const config = getRegionConfig('IE');
   const plan = config.plans[planId];
 
@@ -75,7 +97,7 @@ function getFairUseCap(planId) {
  * @returns {Promise<{allowed: boolean, callsUsed: number, callsRemaining: number|null, reason: string}>}
  */
 async function canMakeCall(userId, planId) {
-  const cap = getFairUseCap(planId);
+  const cap = await getFairUseCap(planId);
 
   // Get current month's usage
   const periodStart = new Date();
@@ -129,7 +151,7 @@ async function canMakeCall(userId, planId) {
  * @returns {Promise<{costCents: number, callsUsed: number}>}
  */
 async function recordCall(userId, planId, vapiCostCents = 0, callId = null, isTrial = false) {
-  const perCallRate = getPerCallRate(planId);
+  const perCallRate = await getPerCallRate(planId);
   const costCents = isTrial ? 0 : perCallRate;
 
   // Get current billing period
@@ -249,7 +271,7 @@ async function recordCall(userId, planId, vapiCostCents = 0, callId = null, isTr
 async function checkAndSendUsageAlert(userId, planId, callsUsed) {
   if (!isEmailConfigured()) return;
 
-  const cap = getFairUseCap(planId);
+  const cap = await getFairUseCap(planId);
 
   // Only send alerts for plans with caps
   if (!cap) return;
@@ -318,8 +340,8 @@ async function getUsageSummary(userId, planId) {
 
   const callsMade = usage?.calls_made || 0;
   const totalChargesCents = usage?.total_call_charges_cents || 0;
-  const cap = getFairUseCap(planId);
-  const perCallRate = getPerCallRate(planId);
+  const cap = await getFairUseCap(planId);
+  const perCallRate = await getPerCallRate(planId);
 
   return {
     callsMade,
