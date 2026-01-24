@@ -15,6 +15,7 @@ const { TheForkAdapter } = require('./thefork');
 const { MindbodyAdapter } = require('./mindbody');
 const { OpenTableAdapter } = require('./opentable');
 const { ResyAdapter } = require('./resy');
+const { GoogleCalendarAdapter } = require('./google-calendar');
 
 // Provider adapter registry
 const PROVIDER_ADAPTERS = {
@@ -26,6 +27,7 @@ const PROVIDER_ADAPTERS = {
   mindbody: MindbodyAdapter,
   opentable: OpenTableAdapter,
   resy: ResyAdapter,
+  google_calendar: GoogleCalendarAdapter,
 };
 
 /**
@@ -311,6 +313,11 @@ async function handleOAuthCallback(userId, providerId, code, redirectUri) {
  * Get OAuth authorization URL
  */
 async function getOAuthUrl(providerId, redirectUri, state) {
+  // Handle Google Calendar specifically
+  if (providerId === 'google_calendar') {
+    return GoogleCalendarAdapter.getAuthUrl(redirectUri, state);
+  }
+
   const provider = await getProvider(providerId);
   if (!provider || !provider.oauth_authorize_url) {
     throw new Error('Provider does not support OAuth');
