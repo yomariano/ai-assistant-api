@@ -258,7 +258,7 @@ describe('GeoLocation Service', () => {
         const config = getRegionConfig('US');
         expect(config.plans).toHaveProperty('starter');
         expect(config.plans).toHaveProperty('growth');
-        expect(config.plans).toHaveProperty('scale');
+        expect(config.plans).toHaveProperty('pro');
       });
     });
 
@@ -276,7 +276,7 @@ describe('GeoLocation Service', () => {
         const config = getRegionConfig('IE');
         expect(config.plans).toHaveProperty('starter');
         expect(config.plans).toHaveProperty('growth');
-        expect(config.plans).toHaveProperty('scale');
+        expect(config.plans).toHaveProperty('pro');
       });
     });
 
@@ -301,55 +301,52 @@ describe('GeoLocation Service', () => {
   // ============================================
   // PRICING
   // ============================================
-  // OrderBot.ie Pricing (January 2026)
-  // Lite: €19/mo + €0.95/call | Growth: €99/mo + €0.45/call | Pro: €249/mo unlimited
+  // VoiceFleet Pricing (January 2026)
+  // Starter: €49/mo 100 calls | Growth: €199/mo 500 calls | Pro: €599/mo 1500 calls + 200 outbound
   describe('getPricingForRegion', () => {
     describe('US pricing', () => {
-      it('should return correct US pricing for starter (Lite) plan', () => {
+      it('should return correct US pricing for starter plan', () => {
         const pricing = getPricingForRegion('US', 'starter');
         expect(pricing.region).toBe('US');
         expect(pricing.currency).toBe('USD');
         expect(pricing.currencySymbol).toBe('$');
-        expect(pricing.price).toBe(19);
-        expect(pricing.formattedPrice).toBe('$19');
-        expect(pricing.monthlyMinutes).toBe(0); // Pay per call model
+        expect(pricing.price).toBe(49);
+        expect(pricing.formattedPrice).toBe('$49');
       });
 
       it('should return correct US pricing for growth plan', () => {
         const pricing = getPricingForRegion('US', 'growth');
-        expect(pricing.price).toBe(99);
-        expect(pricing.formattedPrice).toBe('$99');
-        expect(pricing.monthlyMinutes).toBe(0); // Pay per call model
+        expect(pricing.price).toBe(199);
+        expect(pricing.formattedPrice).toBe('$199');
       });
 
-      it('should return correct US pricing for scale (Pro) plan', () => {
-        const pricing = getPricingForRegion('US', 'scale');
-        expect(pricing.price).toBe(249);
-        expect(pricing.formattedPrice).toBe('$249');
-        expect(pricing.monthlyMinutes).toBe(0); // Unlimited with fair use
+      it('should return correct US pricing for pro plan', () => {
+        const pricing = getPricingForRegion('US', 'pro');
+        expect(pricing.price).toBe(599);
+        expect(pricing.formattedPrice).toBe('$599');
       });
     });
 
     describe('IE pricing', () => {
-      it('should return correct IE pricing for starter (Lite) plan', () => {
+      it('should return correct IE pricing for starter plan', () => {
         const pricing = getPricingForRegion('IE', 'starter');
         expect(pricing.region).toBe('IE');
         expect(pricing.currency).toBe('EUR');
         expect(pricing.currencySymbol).toBe('€');
-        expect(pricing.price).toBe(19);
-        expect(pricing.formattedPrice).toBe('€19');
+        expect(pricing.price).toBe(49);
+        expect(pricing.formattedPrice).toBe('€49');
       });
 
       it('should return correct IE pricing for growth plan', () => {
         const pricing = getPricingForRegion('IE', 'growth');
-        expect(pricing.price).toBe(99);
-        expect(pricing.formattedPrice).toBe('€99');
+        expect(pricing.price).toBe(199);
+        expect(pricing.formattedPrice).toBe('€199');
       });
 
-      it('should return correct IE pricing for scale (Pro) plan', () => {
-        const pricing = getPricingForRegion('IE', 'scale');
-        expect(pricing.price).toBe(249);
-        expect(pricing.formattedPrice).toBe('€249');
+      it('should return correct IE pricing for pro plan', () => {
+        const pricing = getPricingForRegion('IE', 'pro');
+        expect(pricing.price).toBe(599);
+        expect(pricing.formattedPrice).toBe('€599');
       });
     });
 
@@ -371,7 +368,7 @@ describe('GeoLocation Service', () => {
       expect(pricing.regionName).toBe('United States');
       expect(pricing.currency).toBe('USD');
       expect(pricing.plans).toHaveLength(3);
-      expect(pricing.plans.map((p) => p.id)).toEqual(['starter', 'growth', 'scale']);
+      expect(pricing.plans.map((p) => p.id)).toEqual(['starter', 'growth', 'pro']);
     });
 
     it('should return all plans for IE region', () => {
@@ -394,28 +391,28 @@ describe('GeoLocation Service', () => {
       const pricing = getAllPricingForRegion('US');
 
       const starter = pricing.plans.find((p) => p.id === 'starter');
-      expect(starter.price).toBe(19);
-      expect(starter.formattedPrice).toBe('$19');
+      expect(starter.price).toBe(49);
+      expect(starter.formattedPrice).toBe('$49');
 
       const growth = pricing.plans.find((p) => p.id === 'growth');
-      expect(growth.price).toBe(99);
+      expect(growth.price).toBe(199);
 
-      const scale = pricing.plans.find((p) => p.id === 'scale');
-      expect(scale.price).toBe(249);
+      const pro = pricing.plans.find((p) => p.id === 'pro');
+      expect(pro.price).toBe(599);
     });
 
     it('should return correct EUR prices for IE region', () => {
       const pricing = getAllPricingForRegion('IE');
 
       const starter = pricing.plans.find((p) => p.id === 'starter');
-      expect(starter.price).toBe(19);
-      expect(starter.formattedPrice).toBe('€19');
+      expect(starter.price).toBe(49);
+      expect(starter.formattedPrice).toBe('€49');
 
       const growth = pricing.plans.find((p) => p.id === 'growth');
-      expect(growth.price).toBe(99);
+      expect(growth.price).toBe(199);
 
-      const scale = pricing.plans.find((p) => p.id === 'scale');
-      expect(scale.price).toBe(249);
+      const pro = pricing.plans.find((p) => p.id === 'pro');
+      expect(pro.price).toBe(599);
     });
   });
 
@@ -535,8 +532,8 @@ describe('GeoLocation Service', () => {
       expect(ieConfig.plans.starter).toHaveProperty('paymentLink');
       expect(ieConfig.plans.growth).toHaveProperty('priceId');
       expect(ieConfig.plans.growth).toHaveProperty('paymentLink');
-      expect(ieConfig.plans.scale).toHaveProperty('priceId');
-      expect(ieConfig.plans.scale).toHaveProperty('paymentLink');
+      expect(ieConfig.plans.pro).toHaveProperty('priceId');
+      expect(ieConfig.plans.pro).toHaveProperty('paymentLink');
     });
 
     it('should have USD environment variable keys in US config', () => {
@@ -557,34 +554,33 @@ describe('GeoLocation Service', () => {
       expect(pricing.currencySymbol).toBe('$');
     });
 
-    it('should have OrderBot pricing for all EUR plans', () => {
+    it('should have VoiceFleet pricing for all EUR plans', () => {
       const pricing = getAllPricingForRegion('IE');
 
-      const lite = pricing.plans.find(p => p.id === 'starter');
-      expect(lite.price).toBe(19);  // €19
-      expect(lite.perCallPrice).toBe(0.95);  // €0.95/call
+      const starter = pricing.plans.find(p => p.id === 'starter');
+      expect(starter.price).toBe(49);  // €49
+      expect(starter.perCallPrice).toBe(0);  // All calls included
 
       const growth = pricing.plans.find(p => p.id === 'growth');
-      expect(growth.price).toBe(99);  // €99
-      expect(growth.perCallPrice).toBe(0.45);  // €0.45/call
+      expect(growth.price).toBe(199);  // €199
+      expect(growth.perCallPrice).toBe(0);  // All calls included
 
-      const pro = pricing.plans.find(p => p.id === 'scale');
-      expect(pro.price).toBe(249);  // €249
-      expect(pro.perCallPrice).toBe(0);  // Unlimited
-      expect(pro.callsCap).toBe(1500);  // Fair use cap
+      const pro = pricing.plans.find(p => p.id === 'pro');
+      expect(pro.price).toBe(599);  // €599
+      expect(pro.perCallPrice).toBe(0);  // All calls included
     });
 
     it('should format EUR prices correctly', () => {
       const pricing = getAllPricingForRegion('IE');
 
-      const lite = pricing.plans.find(p => p.id === 'starter');
-      expect(lite.formattedPrice).toBe('€19');
+      const starter = pricing.plans.find(p => p.id === 'starter');
+      expect(starter.formattedPrice).toBe('€49');
 
       const growth = pricing.plans.find(p => p.id === 'growth');
-      expect(growth.formattedPrice).toBe('€99');
+      expect(growth.formattedPrice).toBe('€199');
 
-      const pro = pricing.plans.find(p => p.id === 'scale');
-      expect(pro.formattedPrice).toBe('€249');
+      const pro = pricing.plans.find(p => p.id === 'pro');
+      expect(pro.formattedPrice).toBe('€599');
     });
   });
 
@@ -596,13 +592,12 @@ describe('GeoLocation Service', () => {
       Object.values(REGION_CONFIG).forEach((region) => {
         Object.values(region.plans).forEach((plan) => {
           expect(plan).toHaveProperty('price');
-          expect(plan).toHaveProperty('monthlyMinutes');
+          expect(plan).toHaveProperty('callsIncluded');
           expect(plan).toHaveProperty('perCallPrice');
           expect(typeof plan.price).toBe('number');
-          expect(typeof plan.monthlyMinutes).toBe('number');
+          expect(typeof plan.callsIncluded).toBe('number');
           expect(plan.price).toBeGreaterThan(0);
-          // monthlyMinutes is 0 for pay-per-call model
-          expect(plan.monthlyMinutes).toBeGreaterThanOrEqual(0);
+          expect(plan.callsIncluded).toBeGreaterThanOrEqual(0);
         });
       });
     });
@@ -625,29 +620,36 @@ describe('GeoLocation Service', () => {
       });
     });
 
-    it('should have same base prices for both regions (OrderBot pricing)', () => {
-      // OrderBot uses same base prices for all regions
+    it('should have same base prices for both regions (VoiceFleet pricing)', () => {
+      // VoiceFleet uses same base prices for all regions
       expect(REGION_CONFIG.IE.plans.starter.price).toBe(
         REGION_CONFIG.US.plans.starter.price
       );
       expect(REGION_CONFIG.IE.plans.growth.price).toBe(
         REGION_CONFIG.US.plans.growth.price
       );
-      expect(REGION_CONFIG.IE.plans.scale.price).toBe(
-        REGION_CONFIG.US.plans.scale.price
+      expect(REGION_CONFIG.IE.plans.pro.price).toBe(
+        REGION_CONFIG.US.plans.pro.price
       );
     });
 
-    it('should have correct per-call pricing', () => {
-      // Lite: €0.95/call, Growth: €0.45/call, Pro: unlimited
-      expect(REGION_CONFIG.IE.plans.starter.perCallPrice).toBe(0.95);
-      expect(REGION_CONFIG.IE.plans.growth.perCallPrice).toBe(0.45);
-      expect(REGION_CONFIG.IE.plans.scale.perCallPrice).toBe(0);
+    it('should have all calls included (no per-call pricing)', () => {
+      // All plans include calls - no per-call charges
+      expect(REGION_CONFIG.IE.plans.starter.perCallPrice).toBe(0);
+      expect(REGION_CONFIG.IE.plans.growth.perCallPrice).toBe(0);
+      expect(REGION_CONFIG.IE.plans.pro.perCallPrice).toBe(0);
     });
 
-    it('should have fair use cap for Pro plan', () => {
-      expect(REGION_CONFIG.IE.plans.scale.callsCap).toBe(1500);
-      expect(REGION_CONFIG.US.plans.scale.callsCap).toBe(1500);
+    it('should have correct calls included for each plan', () => {
+      // Starter: 100 calls, Growth: 500 calls, Pro: 1500 calls
+      expect(REGION_CONFIG.IE.plans.starter.callsIncluded).toBe(100);
+      expect(REGION_CONFIG.IE.plans.growth.callsIncluded).toBe(500);
+      expect(REGION_CONFIG.IE.plans.pro.callsIncluded).toBe(1500);
+    });
+
+    it('should have outbound calls for Pro plan', () => {
+      expect(REGION_CONFIG.IE.plans.pro.outboundCalls).toBe(200);
+      expect(REGION_CONFIG.US.plans.pro.outboundCalls).toBe(200);
     });
   });
 

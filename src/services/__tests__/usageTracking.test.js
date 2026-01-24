@@ -1,10 +1,10 @@
 /**
  * Usage Tracking Service Tests
  *
- * Tests for per-call billing logic:
- * - Lite: €19/mo + €0.95/call
- * - Growth: €99/mo + €0.45/call
- * - Pro: €249/mo + €0/call (1500 fair use cap)
+ * Tests for VoiceFleet pricing model (Jan 2026):
+ * - Starter: €49/mo - 100 inbound calls/month
+ * - Growth: €199/mo - 500 inbound calls/month
+ * - Pro: €599/mo - 1500 inbound + 200 outbound calls/month
  */
 
 const {
@@ -56,16 +56,16 @@ jest.mock('../supabase', () => ({
 jest.mock('../geoLocation', () => ({
   getPricingForRegion: jest.fn(() => ({
     plans: {
-      starter: { name: 'Lite', price: 19, perCallPrice: 0.95 },
-      growth: { name: 'Growth', price: 99, perCallPrice: 0.45 },
-      scale: { name: 'Pro', price: 249, perCallPrice: 0, callsCap: 1500 }
+      starter: { name: 'Starter', price: 49, perCallPrice: 0, callsCap: 100 },
+      growth: { name: 'Growth', price: 199, perCallPrice: 0, callsCap: 500 },
+      pro: { name: 'Pro', price: 599, perCallPrice: 0, callsCap: 1500 }
     }
   })),
   getRegionConfig: jest.fn((region) => ({
     plans: {
-      starter: { name: 'Lite', price: 19, perCallPrice: 0.95 },
-      growth: { name: 'Growth', price: 99, perCallPrice: 0.45 },
-      scale: { name: 'Pro', price: 249, perCallPrice: 0, callsCap: 1500 }
+      starter: { name: 'Starter', price: 49, perCallPrice: 0, callsCap: 100 },
+      growth: { name: 'Growth', price: 199, perCallPrice: 0, callsCap: 500 },
+      pro: { name: 'Pro', price: 599, perCallPrice: 0, callsCap: 1500 }
     }
   }))
 }));
@@ -76,65 +76,60 @@ describe('Usage Tracking Service', () => {
   });
 
   describe('Constants', () => {
-    test('PER_CALL_RATES matches OrderBot pricing', () => {
-      expect(PER_CALL_RATES.starter).toBe(95);  // €0.95 = 95 cents
-      expect(PER_CALL_RATES.growth).toBe(45);   // €0.45 = 45 cents
-      expect(PER_CALL_RATES.scale).toBe(0);     // €0 = unlimited
+    test('PER_CALL_RATES matches VoiceFleet pricing (all included)', () => {
+      expect(PER_CALL_RATES.starter).toBe(0);  // Included in plan
+      expect(PER_CALL_RATES.growth).toBe(0);   // Included in plan
+      expect(PER_CALL_RATES.pro).toBe(0);      // Included in plan
     });
 
-    test('FAIR_USE_CAPS matches OrderBot pricing', () => {
-      expect(FAIR_USE_CAPS.starter).toBeNull(); // No cap (pay per call)
-      expect(FAIR_USE_CAPS.growth).toBeNull();  // No cap (pay per call)
-      expect(FAIR_USE_CAPS.scale).toBe(1500);   // 1500 calls/month
+    test('FAIR_USE_CAPS matches VoiceFleet pricing', () => {
+      expect(FAIR_USE_CAPS.starter).toBe(100);  // 100 calls/month
+      expect(FAIR_USE_CAPS.growth).toBe(500);   // 500 calls/month
+      expect(FAIR_USE_CAPS.pro).toBe(1500);     // 1500 calls/month
     });
 
-    test('PHONE_LIMITS matches OrderBot pricing', () => {
+    test('PHONE_LIMITS matches VoiceFleet pricing', () => {
       expect(PHONE_LIMITS.starter).toBe(1);
-      expect(PHONE_LIMITS.growth).toBe(2);
-      expect(PHONE_LIMITS.scale).toBe(5);
+      expect(PHONE_LIMITS.growth).toBe(1);
+      expect(PHONE_LIMITS.pro).toBe(1);
     });
   });
 
   describe('getPerCallRate', () => {
-    test('returns 95 cents for starter plan', () => {
-      const rate = getPerCallRate('starter');
-      expect(rate).toBe(95);
-    });
-
-    test('returns 45 cents for growth plan', () => {
-      const rate = getPerCallRate('growth');
-      expect(rate).toBe(45);
-    });
-
-    test('returns 0 cents for scale plan', () => {
-      const rate = getPerCallRate('scale');
+    test('returns 0 cents for starter plan (included in subscription)', async () => {
+      const rate = await getPerCallRate('starter');
       expect(rate).toBe(0);
     });
 
-    test('defaults to starter rate for unknown plan', () => {
-      const rate = getPerCallRate('unknown_plan');
-      expect(rate).toBe(95);
+    test('returns 0 cents for growth plan (included in subscription)', async () => {
+      const rate = await getPerCallRate('growth');
+      expect(rate).toBe(0);
     });
 
-    test('uses region config when available', () => {
-      const rate = getPerCallRate('starter', 'IE');
-      expect(rate).toBe(95); // €0.95 * 100
+    test('returns 0 cents for pro plan (included in subscription)', async () => {
+      const rate = await getPerCallRate('pro');
+      expect(rate).toBe(0);
+    });
+
+    test('defaults to starter rate for unknown plan', async () => {
+      const rate = await getPerCallRate('unknown_plan');
+      expect(rate).toBe(0);
     });
   });
 
   describe('getFairUseCap', () => {
-    test('returns null for starter plan (no cap)', () => {
-      const cap = getFairUseCap('starter');
-      expect(cap).toBeNull();
+    test('returns 100 for starter plan', async () => {
+      const cap = await getFairUseCap('starter');
+      expect(cap).toBe(100);
     });
 
-    test('returns null for growth plan (no cap)', () => {
-      const cap = getFairUseCap('growth');
-      expect(cap).toBeNull();
+    test('returns 500 for growth plan', async () => {
+      const cap = await getFairUseCap('growth');
+      expect(cap).toBe(500);
     });
 
-    test('returns 1500 for scale plan', () => {
-      const cap = getFairUseCap('scale');
+    test('returns 1500 for pro plan', async () => {
+      const cap = await getFairUseCap('pro');
       expect(cap).toBe(1500);
     });
   });
@@ -142,7 +137,7 @@ describe('Usage Tracking Service', () => {
   describe('canMakeCall', () => {
     const { supabaseAdmin } = require('../supabase');
 
-    test('allows call for starter plan (pay per call, no cap)', async () => {
+    test('allows call for starter plan within cap', async () => {
       supabaseAdmin.from.mockReturnValue({
         select: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnValue({
@@ -157,11 +152,11 @@ describe('Usage Tracking Service', () => {
 
       expect(result.allowed).toBe(true);
       expect(result.callsUsed).toBe(50);
-      expect(result.callsRemaining).toBeNull(); // null = unlimited
-      expect(result.reason).toBe('pay_per_call');
+      expect(result.callsRemaining).toBe(50); // 100 - 50
+      expect(result.reason).toBe('within_cap');
     });
 
-    test('allows call for growth plan (pay per call, no cap)', async () => {
+    test('blocks call for starter plan when cap exceeded', async () => {
       supabaseAdmin.from.mockReturnValue({
         select: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnValue({
@@ -172,15 +167,34 @@ describe('Usage Tracking Service', () => {
         })
       });
 
+      const result = await canMakeCall('user-123', 'starter');
+
+      expect(result.allowed).toBe(false);
+      expect(result.callsUsed).toBe(100);
+      expect(result.callsRemaining).toBe(0);
+      expect(result.reason).toBe('fair_use_cap_exceeded');
+    });
+
+    test('allows call for growth plan within cap', async () => {
+      supabaseAdmin.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              single: jest.fn().mockResolvedValue({ data: { calls_made: 300 } })
+            })
+          })
+        })
+      });
+
       const result = await canMakeCall('user-123', 'growth');
 
       expect(result.allowed).toBe(true);
-      expect(result.callsUsed).toBe(100);
-      expect(result.callsRemaining).toBeNull();
-      expect(result.reason).toBe('pay_per_call');
+      expect(result.callsUsed).toBe(300);
+      expect(result.callsRemaining).toBe(200); // 500 - 300
+      expect(result.reason).toBe('within_cap');
     });
 
-    test('allows call for scale plan within cap', async () => {
+    test('allows call for pro plan within cap', async () => {
       supabaseAdmin.from.mockReturnValue({
         select: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnValue({
@@ -191,7 +205,7 @@ describe('Usage Tracking Service', () => {
         })
       });
 
-      const result = await canMakeCall('user-123', 'scale');
+      const result = await canMakeCall('user-123', 'pro');
 
       expect(result.allowed).toBe(true);
       expect(result.callsUsed).toBe(1000);
@@ -199,7 +213,7 @@ describe('Usage Tracking Service', () => {
       expect(result.reason).toBe('within_cap');
     });
 
-    test('blocks call for scale plan when cap exceeded', async () => {
+    test('blocks call for pro plan when cap exceeded', async () => {
       supabaseAdmin.from.mockReturnValue({
         select: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnValue({
@@ -210,7 +224,7 @@ describe('Usage Tracking Service', () => {
         })
       });
 
-      const result = await canMakeCall('user-123', 'scale');
+      const result = await canMakeCall('user-123', 'pro');
 
       expect(result.allowed).toBe(false);
       expect(result.callsUsed).toBe(1500);
@@ -229,7 +243,7 @@ describe('Usage Tracking Service', () => {
         })
       });
 
-      const result = await canMakeCall('user-123', 'scale');
+      const result = await canMakeCall('user-123', 'pro');
 
       expect(result.allowed).toBe(true);
       expect(result.callsUsed).toBe(0);
@@ -246,12 +260,12 @@ describe('Usage Tracking Service', () => {
       supabaseAdmin.from.mockReset();
     });
 
-    test('charges 95 cents for starter plan call', async () => {
+    test('charges 0 cents for starter plan call (included in subscription)', async () => {
       const mockSelect = jest.fn().mockReturnValue({
         eq: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnValue({
             single: jest.fn()
-              .mockResolvedValueOnce({ data: { id: 'usage-1', calls_made: 5, total_call_charges_cents: 475 } })
+              .mockResolvedValueOnce({ data: { id: 'usage-1', calls_made: 5, total_call_charges_cents: 0 } })
               .mockResolvedValueOnce({ data: { calls_made: 6 } })
           })
         })
@@ -270,15 +284,15 @@ describe('Usage Tracking Service', () => {
 
       const result = await recordCall('user-123', 'starter', 50, 'call-1', false);
 
-      expect(result.costCents).toBe(95);
+      expect(result.costCents).toBe(0);
     });
 
-    test('charges 45 cents for growth plan call', async () => {
+    test('charges 0 cents for growth plan call (included in subscription)', async () => {
       const mockSelect = jest.fn().mockReturnValue({
         eq: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnValue({
             single: jest.fn()
-              .mockResolvedValueOnce({ data: { id: 'usage-1', calls_made: 10, total_call_charges_cents: 450 } })
+              .mockResolvedValueOnce({ data: { id: 'usage-1', calls_made: 10, total_call_charges_cents: 0 } })
               .mockResolvedValueOnce({ data: { calls_made: 11 } })
           })
         })
@@ -297,10 +311,10 @@ describe('Usage Tracking Service', () => {
 
       const result = await recordCall('user-123', 'growth', 50, 'call-1', false);
 
-      expect(result.costCents).toBe(45);
+      expect(result.costCents).toBe(0);
     });
 
-    test('charges 0 cents for scale plan call', async () => {
+    test('charges 0 cents for pro plan call', async () => {
       const mockSelect = jest.fn().mockReturnValue({
         eq: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnValue({
@@ -322,7 +336,7 @@ describe('Usage Tracking Service', () => {
         update: mockUpdate
       });
 
-      const result = await recordCall('user-123', 'scale', 50, 'call-1', false);
+      const result = await recordCall('user-123', 'pro', 50, 'call-1', false);
 
       expect(result.costCents).toBe(0);
     });
@@ -359,7 +373,7 @@ describe('Usage Tracking Service', () => {
               single: jest.fn().mockResolvedValue({
                 data: {
                   calls_made: 10,
-                  total_call_charges_cents: 950,
+                  total_call_charges_cents: 0,
                   period_start: '2026-01-01',
                   period_end: '2026-01-31'
                 }
@@ -372,16 +386,16 @@ describe('Usage Tracking Service', () => {
       const summary = await getUsageSummary('user-123', 'starter');
 
       expect(summary.callsMade).toBe(10);
-      expect(summary.totalChargesCents).toBe(950);
-      expect(summary.totalChargesFormatted).toBe('€9.50');
-      expect(summary.perCallRateCents).toBe(95);
-      expect(summary.perCallRateFormatted).toBe('€0.95');
-      expect(summary.fairUseCap).toBeNull();
-      expect(summary.callsRemaining).toBeNull();
-      expect(summary.isUnlimited).toBe(true); // No cap
+      expect(summary.totalChargesCents).toBe(0);
+      expect(summary.totalChargesFormatted).toBe('€0.00');
+      expect(summary.perCallRateCents).toBe(0);
+      expect(summary.perCallRateFormatted).toBe('Included');
+      expect(summary.fairUseCap).toBe(100);
+      expect(summary.callsRemaining).toBe(90); // 100 - 10
+      expect(summary.isUnlimited).toBe(true); // perCallRate is 0
     });
 
-    test('returns formatted usage summary for scale plan with remaining calls', async () => {
+    test('returns formatted usage summary for pro plan with remaining calls', async () => {
       supabaseAdmin.from.mockReturnValue({
         select: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnValue({
@@ -399,7 +413,7 @@ describe('Usage Tracking Service', () => {
         })
       });
 
-      const summary = await getUsageSummary('user-123', 'scale');
+      const summary = await getUsageSummary('user-123', 'pro');
 
       expect(summary.callsMade).toBe(1000);
       expect(summary.totalChargesCents).toBe(0);

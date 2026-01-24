@@ -57,9 +57,9 @@ describe('Email Service', () => {
         expect(result.subject).toContain('Welcome to OrderBot');
         expect(result.html).toContain('Welcome to OrderBot');
         expect(result.html).toContain('John');
-        expect(result.html).toContain('Lite');
-        expect(result.html).toContain('€19/month');
-        expect(result.html).toContain('€0.95');
+        expect(result.html).toContain('Starter');
+        expect(result.html).toContain('€49/month');
+        expect(result.html).toContain('100 calls/month');
         expect(result.text).toContain('Welcome to OrderBot');
       });
 
@@ -75,7 +75,7 @@ describe('Email Service', () => {
       it('should handle missing username gracefully', () => {
         const result = emailService.welcomeEmailTemplate({
           userName: null,
-          planId: 'scale',
+          planId: 'pro',
         });
 
         expect(result.html).toContain('Hi there,');
@@ -88,19 +88,19 @@ describe('Email Service', () => {
         });
 
         expect(result.html).toContain('Growth');
-        expect(result.html).toContain('€99/month');
-        expect(result.html).toContain('€0.45');
+        expect(result.html).toContain('€199/month');
+        expect(result.html).toContain('500 calls/month');
       });
 
       it('should show correct details for Pro plan', () => {
         const result = emailService.welcomeEmailTemplate({
           userName: 'Jane',
-          planId: 'scale',
+          planId: 'pro',
         });
 
         expect(result.html).toContain('Pro');
-        expect(result.html).toContain('€249/month');
-        expect(result.html).toContain('unlimited');
+        expect(result.html).toContain('€599/month');
+        expect(result.html).toContain('1500 inbound + 200 outbound');
       });
     });
 
@@ -109,7 +109,7 @@ describe('Email Service', () => {
         const result = emailService.subscriptionConfirmationTemplate({
           userName: 'John Doe',
           planId: 'growth',
-          amount: 9900,
+          amount: 19900,
           currency: 'eur',
           nextBillingDate: '2025-02-01T00:00:00.000Z',
           invoiceUrl: 'https://invoice.stripe.com/i/test123',
@@ -117,7 +117,7 @@ describe('Email Service', () => {
 
         expect(result.subject).toContain('Payment confirmed');
         expect(result.html).toContain('Payment Confirmed');
-        expect(result.html).toContain('€99.00');
+        expect(result.html).toContain('€199.00');
         expect(result.html).toContain('Growth');
         expect(result.html).toContain('1 February 2025');
         expect(result.html).toContain('View Invoice');
@@ -128,19 +128,19 @@ describe('Email Service', () => {
         const result = emailService.subscriptionConfirmationTemplate({
           userName: 'Jane',
           planId: 'starter',
-          amount: 1900,
+          amount: 4900,
           currency: 'usd',
           nextBillingDate: '2025-03-15T00:00:00.000Z',
         });
 
-        expect(result.html).toContain('$19.00');
+        expect(result.html).toContain('$49.00');
       });
 
       it('should handle missing invoice URL', () => {
         const result = emailService.subscriptionConfirmationTemplate({
           userName: 'Jane',
           planId: 'starter',
-          amount: 1900,
+          amount: 4900,
           currency: 'eur',
           nextBillingDate: '2025-03-15T00:00:00.000Z',
           invoiceUrl: null,
@@ -155,14 +155,14 @@ describe('Email Service', () => {
         const result = emailService.paymentFailedTemplate({
           userName: 'John',
           planId: 'growth',
-          amount: 9900,
+          amount: 19900,
           currency: 'eur',
           retryDate: '2025-01-15T00:00:00.000Z',
         });
 
         expect(result.subject).toContain('Payment failed');
         expect(result.html).toContain('Payment Failed');
-        expect(result.html).toContain('€99.00');
+        expect(result.html).toContain('€199.00');
         expect(result.html).toContain('Update Payment Method');
         // Date should be formatted (format may vary by locale - "15/1/2025" or "15/01/2025")
         expect(result.html).toMatch(/15\/1\/2025|15\/01\/2025|January.*15|15.*January/);
@@ -172,7 +172,7 @@ describe('Email Service', () => {
         const result = emailService.paymentFailedTemplate({
           userName: 'John',
           planId: 'starter',
-          amount: 1900,
+          amount: 4900,
           currency: 'eur',
           retryDate: null,
         });
@@ -185,7 +185,7 @@ describe('Email Service', () => {
       it('should generate cancellation email with end date', () => {
         const result = emailService.subscriptionCancelledTemplate({
           userName: 'John',
-          planId: 'scale',
+          planId: 'pro',
           endDate: '2025-01-31T23:59:59.000Z',
         });
 
@@ -246,7 +246,7 @@ describe('Email Service', () => {
     it('should send subscription confirmation email', async () => {
       const result = await emailService.sendSubscriptionConfirmation('user-123', {
         planId: 'starter',
-        amount: 1900,
+        amount: 4900,
         currency: 'eur',
         nextBillingDate: '2025-02-01',
         invoiceUrl: 'https://invoice.stripe.com/test',
@@ -260,7 +260,7 @@ describe('Email Service', () => {
     it('should send payment failed email', async () => {
       const result = await emailService.sendPaymentFailedEmail('user-123', {
         planId: 'growth',
-        amount: 9900,
+        amount: 19900,
         currency: 'eur',
         retryDate: '2025-01-15',
       });
@@ -272,7 +272,7 @@ describe('Email Service', () => {
   describe('sendSubscriptionCancelledEmail', () => {
     it('should send cancellation email', async () => {
       const result = await emailService.sendSubscriptionCancelledEmail('user-123', {
-        planId: 'scale',
+        planId: 'pro',
         endDate: '2025-01-31',
       });
 
@@ -288,14 +288,14 @@ describe('Email Template Structure', () => {
       emailService.subscriptionConfirmationTemplate({
         userName: 'Test',
         planId: 'starter',
-        amount: 1900,
+        amount: 4900,
         currency: 'eur',
         nextBillingDate: '2025-02-01',
       }),
       emailService.paymentFailedTemplate({
         userName: 'Test',
         planId: 'starter',
-        amount: 1900,
+        amount: 4900,
         currency: 'eur',
       }),
       emailService.subscriptionCancelledTemplate({
@@ -321,14 +321,14 @@ describe('Email Template Structure', () => {
       emailService.subscriptionConfirmationTemplate({
         userName: 'Test',
         planId: 'starter',
-        amount: 1900,
+        amount: 4900,
         currency: 'eur',
         nextBillingDate: '2025-02-01',
       }),
       emailService.paymentFailedTemplate({
         userName: 'Test',
         planId: 'starter',
-        amount: 1900,
+        amount: 4900,
         currency: 'eur',
       }),
       emailService.subscriptionCancelledTemplate({
@@ -358,14 +358,14 @@ describe('Email Template Structure', () => {
     const confirmation = emailService.subscriptionConfirmationTemplate({
       userName: 'Test',
       planId: 'starter',
-      amount: 1900,
+      amount: 4900,
       currency: 'eur',
       nextBillingDate: '2025-02-01',
     });
     const paymentFailed = emailService.paymentFailedTemplate({
       userName: 'Test',
       planId: 'starter',
-      amount: 1900,
+      amount: 4900,
       currency: 'eur',
     });
     const cancelled = emailService.subscriptionCancelledTemplate({
