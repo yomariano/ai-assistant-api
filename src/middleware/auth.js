@@ -5,7 +5,7 @@ const { sendWelcomeEmail, isEmailConfigured } = require('../services/emailServic
 const DEV_USER_IDS = {
   starter: '00000000-0000-0000-0000-000000000001',
   growth: '00000000-0000-0000-0000-000000000002',
-  scale: '00000000-0000-0000-0000-000000000003',
+  pro: '00000000-0000-0000-0000-000000000003',
 };
 
 // Store current dev user plan in memory (for simplicity)
@@ -51,7 +51,7 @@ const clearCustomUserId = () => {
 
 /**
  * Get or create dev user for local development
- * @param {string} plan - Optional plan to get specific dev user (starter, growth, scale)
+ * @param {string} plan - Optional plan to get specific dev user (starter, growth, pro)
  */
 const getDevUser = async (plan = null) => {
   // E2E mode: if custom user ID is set, use that first

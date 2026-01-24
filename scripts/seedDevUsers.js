@@ -23,12 +23,10 @@ const DEV_USERS = [
   },
   {
     id: '00000000-0000-0000-0000-000000000003',
-    email: 'scale@dev.local',
-    full_name: 'Dev User (Scale)',
-    plan_id: 'scale',
-    phone_numbers: [
-      '+15553000001', '+15553000002', '+15553000003', '+15553000004', '+15553000005'
-    ],
+    email: 'pro@dev.local',
+    full_name: 'Dev User (Pro)',
+    plan_id: 'pro',
+    phone_numbers: ['+15553000001'],
   },
 ];
 
@@ -38,9 +36,9 @@ async function seedDevUsers() {
   // First, ensure subscription plans exist (OrderBot per-call pricing model)
   console.log('Checking subscription plans...');
   const plans = [
-    { id: 'starter', name: 'Lite', price_cents: 1900, minutes_included: 0, max_minutes_per_call: 30, per_call_rate_cents: 95 },
-    { id: 'growth', name: 'Growth', price_cents: 9900, minutes_included: 0, max_minutes_per_call: 30, per_call_rate_cents: 45 },
-    { id: 'scale', name: 'Pro', price_cents: 24900, minutes_included: 0, max_minutes_per_call: 30, per_call_rate_cents: 0, fair_use_cap: 1500 },
+    { id: 'starter', name: 'Starter', price_cents: 4900, minutes_included: 0, max_minutes_per_call: 15, per_call_rate_cents: 0, calls_cap: 100 },
+    { id: 'growth', name: 'Growth', price_cents: 19900, minutes_included: 0, max_minutes_per_call: 15, per_call_rate_cents: 0, calls_cap: 500 },
+    { id: 'pro', name: 'Pro', price_cents: 59900, minutes_included: 0, max_minutes_per_call: 30, per_call_rate_cents: 0, calls_cap: 1500 },
   ];
 
   for (const plan of plans) {
@@ -114,8 +112,8 @@ async function seedDevUsers() {
           business_name: `${devUser.plan_id.charAt(0).toUpperCase() + devUser.plan_id.slice(1)} Test Business`,
           business_description: `A test business on the ${devUser.plan_id} plan.`,
           greeting_name: devUser.full_name.split(' ')[0],
-          voice_cloning_enabled: ['growth', 'scale'].includes(devUser.plan_id),
-          custom_knowledge_base: devUser.plan_id === 'scale',
+          voice_cloning_enabled: ['growth', 'pro'].includes(devUser.plan_id),
+          custom_knowledge_base: devUser.plan_id === 'pro',
           last_synced_at: new Date().toISOString(),
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -172,9 +170,9 @@ async function seedDevUsers() {
 
       // Simulate different usage levels per plan
       const usageMinutes = {
-        starter: 22,  // ~75% of 30
-        growth: 60,   // 60% of 100
-        scale: 150,   // 50% of 300
+        starter: 75,   // 75% of 100 calls
+        growth: 300,   // 60% of 500 calls
+        pro: 750,      // 50% of 1500 calls
       };
 
       const { error: usageError } = await supabase
@@ -202,9 +200,9 @@ async function seedDevUsers() {
 
   console.log('Done! Dev users created:');
   console.log('  - starter@dev.local (Starter plan, 1 number)');
-  console.log('  - growth@dev.local (Growth plan, 2 numbers)');
-  console.log('  - scale@dev.local (Scale plan, 5 numbers)');
-  console.log('\nUse /api/auth/dev-login?plan=starter|growth|scale to switch users');
+  console.log('  - growth@dev.local (Growth plan, 1 number)');
+  console.log('  - pro@dev.local (Pro plan, 1 number)');
+  console.log('\nUse /api/auth/dev-login?plan=starter|growth|pro to switch users');
 }
 
 seedDevUsers()
