@@ -509,8 +509,10 @@ router.post('/bookings/:id/confirm', authenticate, async (req, res, next) => {
 });
 
 // =====================================================
-// Calendar Integration (Placeholder for Phase 4)
+// Calendar Integration
 // =====================================================
+
+const providerService = require('../services/providers');
 
 /**
  * GET /api/integrations/calendar/status
@@ -518,12 +520,191 @@ router.post('/bookings/:id/confirm', authenticate, async (req, res, next) => {
  */
 router.get('/calendar/status', authenticate, async (req, res, next) => {
   try {
+    // Check for Google Calendar connection
+    const connections = await providerService.getConnections(req.userId);
+    const googleCalConnection = connections.find(c => c.provider_id === 'google_calendar');
+
+    if (googleCalConnection && googleCalConnection.status === 'connected') {
+      return res.json({
+        connected: true,
+        provider: 'google_calendar',
+        providerName: 'Google Calendar',
+        calendarId: googleCalConnection.config?.calendarId || 'primary',
+        accountName: googleCalConnection.external_account_name,
+        accountId: googleCalConnection.external_account_id,
+        connectionId: googleCalConnection.id,
+        connectedAt: googleCalConnection.connected_at
+      });
+    }
+
+    // Fallback to booking config for legacy support
     const config = await bookingService.getBookingConfig(req.userId);
 
     res.json({
       connected: !!(config?.calendar_credentials),
       provider: config?.calendar_provider || null,
       calendarId: config?.calendar_id || null
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/integrations/calendar/connect-url
+ * Get OAuth URL to connect Google Calendar
+ */
+router.get('/calendar/connect-url', authenticate, async (req, res, next) => {
+  try {
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+    const apiUrl = process.env.API_URL || 'http://localhost:3000';
+    const redirectUri = `${apiUrl}/api/providers/google_calendar/oauth/callback`;
+
+    // Generate state token for CSRF protection
+    const state = Buffer.from(JSON.stringify({
+      userId: req.userId,
+      providerId: 'google_calendar',
+      timestamp: Date.now(),
+    })).toString('base64url');
+
+    const url = await providerService.getOAuthUrl(
+      'google_calendar',
+      redirectUri,
+      state
+    );
+
+    res.json({ url, state });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * DELETE /api/integrations/calendar/disconnect
+ * Disconnect Google Calendar
+ */
+router.delete('/calendar/disconnect', authenticate, async (req, res, next) => {
+  try {
+    const connections = await providerService.getConnections(req.userId);
+    const googleCalConnection = connections.find(c => c.provider_id === 'google_calendar');
+
+    if (!googleCalConnection) {
+      return res.status(404).json({ error: { message: 'No Google Calendar connection found' } });
+    }
+
+    await providerService.deleteConnection(req.userId, googleCalConnection.id);
+
+    res.json({ success: true, message: 'Google Calendar disconnected' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/integrations/calendar/calendars
+ * List available calendars from connected Google Calendar
+ */
+router.get('/calendar/calendars', authenticate, async (req, res, next) => {
+  try {
+    const connections = await providerService.getConnections(req.userId);
+    const googleCalConnection = connections.find(c => c.provider_id === 'google_calendar' && c.status === 'connected');
+
+    if (!googleCalConnection) {
+      return res.status(400).json({ error: { message: 'Google Calendar not connected' } });
+    }
+
+    const calendars = await providerService.getEventTypes(req.userId, googleCalConnection.id);
+
+    res.json({
+      calendars: calendars.map(cal => ({
+        id: cal.id,
+        name: cal.name,
+        primary: cal.metadata?.primary || false,
+        backgroundColor: cal.metadata?.backgroundColor,
+        timezone: cal.metadata?.timezone
+      }))
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/integrations/calendar/select
+ * Select which calendar to use for bookings
+ */
+router.post('/calendar/select', authenticate, async (req, res, next) => {
+  try {
+    const { calendarId } = req.body;
+
+    if (!calendarId) {
+      return res.status(400).json({ error: { message: 'Calendar ID is required' } });
+    }
+
+    const connections = await providerService.getConnections(req.userId);
+    const googleCalConnection = connections.find(c => c.provider_id === 'google_calendar' && c.status === 'connected');
+
+    if (!googleCalConnection) {
+      return res.status(400).json({ error: { message: 'Google Calendar not connected' } });
+    }
+
+    // Update connection config with selected calendar
+    await providerService.updateConnection(req.userId, googleCalConnection.id, {
+      config: {
+        ...googleCalConnection.config,
+        calendarId
+      }
+    });
+
+    res.json({ success: true, calendarId });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/integrations/calendar/availability
+ * Get availability from connected calendar
+ */
+router.get('/calendar/availability', authenticate, async (req, res, next) => {
+  try {
+    const { date, startDate, endDate } = req.query;
+
+    const start = startDate || date;
+    const end = endDate || date;
+
+    if (!start) {
+      return res.status(400).json({ error: { message: 'Date is required' } });
+    }
+
+    const connections = await providerService.getConnections(req.userId);
+    const googleCalConnection = connections.find(c => c.provider_id === 'google_calendar' && c.status === 'connected');
+
+    if (!googleCalConnection) {
+      return res.status(400).json({ error: { message: 'Google Calendar not connected' } });
+    }
+
+    const calendarId = googleCalConnection.config?.calendarId || 'primary';
+    const slots = await providerService.getAvailability(
+      req.userId,
+      googleCalConnection.id,
+      calendarId,
+      start,
+      end
+    );
+
+    // Filter to only available slots
+    const availableSlots = slots.filter(s => s.available);
+
+    res.json({
+      date: start,
+      endDate: end,
+      slots: availableSlots.map(s => ({
+        startTime: s.startTime,
+        endTime: s.endTime,
+        time: new Date(s.startTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+      })),
+      total: availableSlots.length
     });
   } catch (error) {
     next(error);

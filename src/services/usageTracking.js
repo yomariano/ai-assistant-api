@@ -1,10 +1,10 @@
 /**
  * Usage Tracking Service
  *
- * Handles per-call billing for OrderBot.ie pricing model:
- * - Lite (starter): €19/mo + €0.95/call
- * - Growth: €99/mo + €0.45/call
- * - Pro (scale): €249/mo + €0/call (1500 fair use cap)
+ * Handles call tracking for VoiceFleet pricing model (Jan 2026):
+ * - Starter: €49/mo - 100 inbound calls/month
+ * - Growth: €199/mo - 500 inbound calls/month
+ * - Pro: €599/mo - 1500 inbound + 200 outbound calls/month
  *
  * Plan configuration is now loaded from the database via planConfig service.
  */
@@ -20,21 +20,21 @@ const ALERT_THRESHOLDS = [80, 100]; // Notify at 80% and 100%
 // Legacy constants for backwards compatibility (deprecated - use planConfig instead)
 // These will be removed in a future version
 const PER_CALL_RATES = {
-  starter: 95,   // €0.95
-  growth: 45,    // €0.45
-  scale: 0       // €0 (unlimited)
+  starter: 0,    // €0 - included in plan
+  growth: 0,     // €0 - included in plan
+  pro: 0         // €0 - included in plan
 };
 
 const FAIR_USE_CAPS = {
-  starter: null,  // No cap (pay per call)
-  growth: null,   // No cap (pay per call)
-  scale: 1500     // 1500 calls/month fair use
+  starter: 100,   // 100 calls/month
+  growth: 500,    // 500 calls/month
+  pro: 1500       // 1500 calls/month
 };
 
 const PHONE_LIMITS = {
   starter: 1,
-  growth: 2,
-  scale: 5
+  growth: 1,
+  pro: 1
 };
 
 /**

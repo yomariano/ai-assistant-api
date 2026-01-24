@@ -151,7 +151,7 @@ async function getUsersForTrigger(trigger) {
 async function getUsersForUsageTrigger(condition) {
   const targetPercent = condition.usage_percent;
 
-  // Get users with scale plan (which has fair use cap)
+  // Get users with pro plan (which has fair use cap)
   const { data: users, error } = await supabaseAdmin
     .from('users')
     .select(`
@@ -163,7 +163,7 @@ async function getUsersForUsageTrigger(condition) {
       notification_preferences(marketing_emails)
     `)
     .eq('user_subscriptions.status', 'active')
-    .eq('user_subscriptions.plan_id', 'scale')
+    .eq('user_subscriptions.plan_id', 'pro')
     .not('email', 'is', null);
 
   if (error) {
@@ -171,7 +171,7 @@ async function getUsersForUsageTrigger(condition) {
     return [];
   }
 
-  // Fair use cap for scale plan
+  // Fair use cap for pro plan
   const FAIR_USE_CAP = 1500;
 
   return users
@@ -199,7 +199,7 @@ async function getUsersForUsageTrigger(condition) {
       id: user.id,
       email: user.email,
       fullName: user.full_name,
-      planId: 'scale',
+      planId: 'pro',
       currentUsage: user.usage_tracking?.find(ut => {
         const now = new Date();
         const start = new Date(ut.period_start);
@@ -304,10 +304,10 @@ async function getUsersForAbandonedUpgradeTrigger(condition) {
       const prefs = user.notification_preferences;
       if (prefs && prefs.marketing_emails === false) return false;
 
-      // Only target starter/growth users (not already on scale)
+      // Only target starter/growth users (not already on pro)
       const subscription = user.user_subscriptions;
       if (!subscription || subscription.status !== 'active') return false;
-      if (subscription.plan_id === 'scale') return false;
+      if (subscription.plan_id === 'pro') return false;
 
       return true;
     })

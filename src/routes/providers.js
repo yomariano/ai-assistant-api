@@ -329,8 +329,69 @@ router.get('/:providerId/oauth/url', authenticate, async (req, res, next) => {
 });
 
 /**
+ * GET /api/providers/:providerId/oauth/callback
+ * Handle OAuth callback redirect from provider (e.g., Google)
+ * This is used when the provider redirects directly to the backend
+ */
+router.get('/:providerId/oauth/callback', async (req, res) => {
+  try {
+    const { code, state, error: oauthError, error_description } = req.query;
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+
+    if (oauthError) {
+      console.error(`[OAuth] Error from provider: ${oauthError} - ${error_description}`);
+      return res.redirect(`${frontendUrl}/integrations?error=${encodeURIComponent(error_description || oauthError)}`);
+    }
+
+    if (!code || !state) {
+      return res.redirect(`${frontendUrl}/integrations?error=${encodeURIComponent('Missing authorization code or state')}`);
+    }
+
+    // Decode state to get user ID and provider ID
+    let stateData;
+    try {
+      stateData = JSON.parse(Buffer.from(state, 'base64url').toString());
+    } catch {
+      return res.redirect(`${frontendUrl}/integrations?error=${encodeURIComponent('Invalid state token')}`);
+    }
+
+    const { userId, providerId } = stateData;
+
+    if (providerId !== req.params.providerId) {
+      return res.redirect(`${frontendUrl}/integrations?error=${encodeURIComponent('Provider mismatch')}`);
+    }
+
+    // Build the redirect URI that was used for the OAuth flow
+    const redirectUri = `${process.env.API_URL || 'http://localhost:3000'}/api/providers/${providerId}/oauth/callback`;
+
+    // Exchange the code for tokens and create the connection
+    const connection = await providerService.handleOAuthCallback(
+      userId,
+      providerId,
+      code,
+      redirectUri
+    );
+
+    // Sync booking tools to assistant now that provider is connected via OAuth
+    try {
+      await syncBookingToolsToAssistant(userId);
+      console.log(`[Providers] Synced booking tools for user ${userId} after OAuth connection`);
+    } catch (syncError) {
+      console.error('[Providers] Failed to sync booking tools:', syncError.message);
+    }
+
+    // Redirect to frontend with success
+    res.redirect(`${frontendUrl}/integrations?provider=${providerId}&success=true`);
+  } catch (error) {
+    console.error('[OAuth] Callback error:', error);
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+    res.redirect(`${frontendUrl}/integrations?error=${encodeURIComponent(error.message)}`);
+  }
+});
+
+/**
  * POST /api/providers/:providerId/oauth/callback
- * Handle OAuth callback
+ * Handle OAuth callback (alternative method for frontend-initiated flows)
  */
 router.post('/:providerId/oauth/callback', authenticate, async (req, res, next) => {
   try {

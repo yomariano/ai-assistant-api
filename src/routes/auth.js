@@ -21,7 +21,7 @@ router.get('/config', (req, res) => {
  * GET /api/auth/dev-login
  * Auto-login with dev user (only works in dev mode)
  * Query params:
- *   - plan: starter | growth | scale (optional, switches active dev user)
+ *   - plan: starter | growth | pro (optional, switches active dev user)
  *   - userId: custom user ID (optional, for E2E tests with dynamic users)
  */
 router.get('/dev-login', async (req, res, next) => {
@@ -131,7 +131,7 @@ router.get('/dev-users', async (req, res) => {
   res.json({
     currentPlan: getDevPlan(),
     users,
-    hint: 'Use GET /api/auth/dev-login?plan=starter|growth|scale to switch users'
+    hint: 'Use GET /api/auth/dev-login?plan=starter|growth|pro to switch users'
   });
 });
 

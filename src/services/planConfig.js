@@ -70,18 +70,18 @@ async function loadPlans() {
 
 /**
  * Fallback plans if database is unavailable
- * These match the OrderBot pricing model
+ * These match the VoiceFleet Jan 2026 pricing model
  */
 function getFallbackPlans() {
   console.warn('[PlanConfig] Using fallback plans (database unavailable)');
   return {
     starter: {
       id: 'starter',
-      name: 'Lite',
-      displayName: 'Lite',
-      priceCents: 1900,
-      perCallCents: 95,
-      callsCap: null,
+      name: 'Starter',
+      displayName: 'Starter',
+      priceCents: 4900,
+      perCallCents: 0,
+      callsCap: 100,
       phoneNumbers: 1,
       maxMinutesPerCall: 15,
     },
@@ -89,20 +89,20 @@ function getFallbackPlans() {
       id: 'growth',
       name: 'Growth',
       displayName: 'Growth',
-      priceCents: 9900,
-      perCallCents: 45,
-      callsCap: null,
-      phoneNumbers: 2,
+      priceCents: 19900,
+      perCallCents: 0,
+      callsCap: 500,
+      phoneNumbers: 1,
       maxMinutesPerCall: 15,
     },
-    scale: {
-      id: 'scale',
+    pro: {
+      id: 'pro',
       name: 'Pro',
       displayName: 'Pro',
-      priceCents: 24900,
+      priceCents: 59900,
       perCallCents: 0,
       callsCap: 1500,
-      phoneNumbers: 5,
+      phoneNumbers: 1,
       maxMinutesPerCall: 30,
     },
   };
@@ -110,7 +110,7 @@ function getFallbackPlans() {
 
 /**
  * Get configuration for a specific plan
- * @param {string} planId - Plan identifier (starter, growth, scale)
+ * @param {string} planId - Plan identifier (starter, growth, pro)
  * @returns {Promise<Object>} Plan configuration
  */
 async function getPlanConfig(planId) {

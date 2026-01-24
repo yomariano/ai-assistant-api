@@ -632,9 +632,9 @@ async function notifyIrelandSubscription(subscriptionData) {
   const supportEmail = process.env.SUPPORT_EMAIL || 'support@voicefleet.ai';
 
   const planDisplayNames = {
-    starter: 'Lite (€19/mo)',
-    growth: 'Growth (€99/mo)',
-    scale: 'Pro (€249/mo)',
+    starter: 'Starter (€49/mo)',
+    growth: 'Growth (€199/mo)',
+    pro: 'Pro (€599/mo)',
   };
 
   const subject = `🇮🇪 New Ireland Subscription - ${planDisplayNames[planId] || planId} - Action Required`;

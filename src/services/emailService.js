@@ -36,9 +36,9 @@ const EMAIL_CONFIG = {
 };
 
 const PLAN_DETAILS = {
-  starter: { name: 'Lite', price: '€19', perCall: '€0.95', phoneNumbers: 1 },
-  growth: { name: 'Growth', price: '€99', perCall: '€0.45', phoneNumbers: 2 },
-  scale: { name: 'Pro', price: '€249', perCall: '€0 (unlimited)', phoneNumbers: 5 },
+  starter: { name: 'Starter', price: '€49', perCall: '100 calls/month', phoneNumbers: 1 },
+  growth: { name: 'Growth', price: '€199', perCall: '500 calls/month', phoneNumbers: 1 },
+  pro: { name: 'Pro', price: '€599', perCall: '1500 inbound + 200 outbound', phoneNumbers: 1 },
 };
 
 // ============================================

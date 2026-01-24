@@ -7,8 +7,11 @@
 const axios = require('axios');
 
 // Region configuration with pricing and provider info
-// OrderBot.ie Pricing Strategy (January 2026)
-// LITE: €19/mo + €0.95/call | GROWTH: €99/mo + €0.45/call | PRO: €249/mo unlimited
+// VoiceFleet Pricing (January 2026)
+// STARTER: €49/mo 100 calls | GROWTH: €199/mo 500 calls | PRO: €599/mo 1500 calls + 200 outbound
+// Determine if using live mode
+const isLiveMode = process.env.STRIPE_MODE === 'live';
+
 const REGION_CONFIG = {
   US: {
     code: 'US',
@@ -19,29 +22,29 @@ const REGION_CONFIG = {
     defaultCountryCode: '+1',
     plans: {
       starter: {
-        name: 'Lite',
-        price: 19,
-        perCallPrice: 0.95,
-        monthlyMinutes: 0, // Pay per call model
-        priceId: process.env.STRIPE_STARTER_PRICE_USD || process.env.STRIPE_STARTER_PRICE,
-        paymentLink: process.env.STRIPE_PAYMENT_LINK_STARTER_USD || process.env.STRIPE_PAYMENT_LINK_STARTER,
+        name: 'Starter',
+        price: 49,
+        callsIncluded: 100,
+        perCallPrice: 0,
+        priceId: isLiveMode ? process.env.STRIPE_LIVE_STARTER_PRICE_EUR : process.env.STRIPE_TEST_STARTER_PRICE_EUR,
+        paymentLink: isLiveMode ? process.env.STRIPE_LIVE_PAYMENT_LINK_STARTER : process.env.STRIPE_TEST_PAYMENT_LINK_STARTER,
       },
       growth: {
         name: 'Growth',
-        price: 99,
-        perCallPrice: 0.45,
-        monthlyMinutes: 0, // Pay per call model
-        priceId: process.env.STRIPE_GROWTH_PRICE_USD || process.env.STRIPE_GROWTH_PRICE,
-        paymentLink: process.env.STRIPE_PAYMENT_LINK_GROWTH_USD || process.env.STRIPE_PAYMENT_LINK_GROWTH,
+        price: 199,
+        callsIncluded: 500,
+        perCallPrice: 0,
+        priceId: isLiveMode ? process.env.STRIPE_LIVE_GROWTH_PRICE_EUR : process.env.STRIPE_TEST_GROWTH_PRICE_EUR,
+        paymentLink: isLiveMode ? process.env.STRIPE_LIVE_PAYMENT_LINK_GROWTH : process.env.STRIPE_TEST_PAYMENT_LINK_GROWTH,
       },
-      scale: {
+      pro: {
         name: 'Pro',
-        price: 249,
-        perCallPrice: 0, // Unlimited
-        monthlyMinutes: 0, // Unlimited (1500 fair use cap)
-        callsCap: 1500,
-        priceId: process.env.STRIPE_SCALE_PRICE_USD || process.env.STRIPE_SCALE_PRICE,
-        paymentLink: process.env.STRIPE_PAYMENT_LINK_SCALE_USD || process.env.STRIPE_PAYMENT_LINK_SCALE,
+        price: 599,
+        callsIncluded: 1500,
+        outboundCalls: 200,
+        perCallPrice: 0,
+        priceId: isLiveMode ? process.env.STRIPE_LIVE_PRO_PRICE_EUR : process.env.STRIPE_TEST_PRO_PRICE_EUR,
+        paymentLink: isLiveMode ? process.env.STRIPE_LIVE_PAYMENT_LINK_PRO : process.env.STRIPE_TEST_PAYMENT_LINK_PRO,
       },
     },
   },
@@ -54,29 +57,29 @@ const REGION_CONFIG = {
     defaultCountryCode: '+353',
     plans: {
       starter: {
-        name: 'Lite',
-        price: 19,
-        perCallPrice: 0.95,
-        monthlyMinutes: 0, // Pay per call model
-        priceId: process.env.STRIPE_STARTER_PRICE_EUR,
-        paymentLink: process.env.STRIPE_PAYMENT_LINK_STARTER_EUR,
+        name: 'Starter',
+        price: 49,
+        callsIncluded: 100,
+        perCallPrice: 0,
+        priceId: isLiveMode ? process.env.STRIPE_LIVE_STARTER_PRICE_EUR : process.env.STRIPE_TEST_STARTER_PRICE_EUR,
+        paymentLink: isLiveMode ? process.env.STRIPE_LIVE_PAYMENT_LINK_STARTER : process.env.STRIPE_TEST_PAYMENT_LINK_STARTER,
       },
       growth: {
         name: 'Growth',
-        price: 99,
-        perCallPrice: 0.45,
-        monthlyMinutes: 0, // Pay per call model
-        priceId: process.env.STRIPE_GROWTH_PRICE_EUR,
-        paymentLink: process.env.STRIPE_PAYMENT_LINK_GROWTH_EUR,
+        price: 199,
+        callsIncluded: 500,
+        perCallPrice: 0,
+        priceId: isLiveMode ? process.env.STRIPE_LIVE_GROWTH_PRICE_EUR : process.env.STRIPE_TEST_GROWTH_PRICE_EUR,
+        paymentLink: isLiveMode ? process.env.STRIPE_LIVE_PAYMENT_LINK_GROWTH : process.env.STRIPE_TEST_PAYMENT_LINK_GROWTH,
       },
-      scale: {
+      pro: {
         name: 'Pro',
-        price: 249,
-        perCallPrice: 0, // Unlimited
-        monthlyMinutes: 0, // Unlimited (1500 fair use cap)
-        callsCap: 1500,
-        priceId: process.env.STRIPE_SCALE_PRICE_EUR,
-        paymentLink: process.env.STRIPE_PAYMENT_LINK_SCALE_EUR,
+        price: 599,
+        callsIncluded: 1500,
+        outboundCalls: 200,
+        perCallPrice: 0,
+        priceId: isLiveMode ? process.env.STRIPE_LIVE_PRO_PRICE_EUR : process.env.STRIPE_TEST_PRO_PRICE_EUR,
+        paymentLink: isLiveMode ? process.env.STRIPE_LIVE_PAYMENT_LINK_PRO : process.env.STRIPE_TEST_PAYMENT_LINK_PRO,
       },
     },
   },
@@ -172,7 +175,7 @@ function getRegionConfig(region) {
 /**
  * Get pricing for a specific region and plan
  * @param {string} region - Region code
- * @param {string} planId - Plan identifier (starter, growth, scale)
+ * @param {string} planId - Plan identifier (starter, growth, pro)
  * @returns {Object} Pricing details
  */
 function getPricingForRegion(region, planId) {

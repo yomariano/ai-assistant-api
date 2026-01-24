@@ -124,7 +124,7 @@ router.get('/payment-link/:planId', authenticate, async (req, res, next) => {
     const { planId } = req.params;
     const { region: regionOverride } = req.query;
 
-    if (!planId || !['starter', 'growth', 'scale'].includes(planId)) {
+    if (!planId || !['starter', 'growth', 'pro'].includes(planId)) {
       return res.status(400).json({ error: { message: 'Invalid plan ID' } });
     }
 
@@ -193,7 +193,7 @@ router.get('/payment-links', authenticate, async (req, res, next) => {
       links: {
         starter: getPaymentLink('starter', req.userId),
         growth: getPaymentLink('growth', req.userId),
-        scale: getPaymentLink('scale', req.userId)
+        pro: getPaymentLink('pro', req.userId)
       }
     });
   } catch (error) {
@@ -248,7 +248,7 @@ router.get('/redirect', authenticate, async (req, res, next) => {
     }
 
     // New user - redirect to payment link
-    if (!planId || !['starter', 'growth', 'scale'].includes(planId)) {
+    if (!planId || !['starter', 'growth', 'pro'].includes(planId)) {
       // No plan specified, return info only
       return res.json({
         type: 'none',

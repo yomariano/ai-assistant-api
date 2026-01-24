@@ -163,8 +163,8 @@ async function createAssistantForUser(userId, options = {}) {
 
     // Determine features based on plan
     const planLimits = getPlanLimits(planId);
-    const voiceCloning = ['growth', 'scale'].includes(planId);
-    const customKnowledge = ['scale'].includes(planId);
+    const voiceCloning = ['growth', 'pro'].includes(planId);
+    const customKnowledge = ['pro'].includes(planId);
 
     // Save to database
     const { data: assistant, error } = await supabaseAdmin

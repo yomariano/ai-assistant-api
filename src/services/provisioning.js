@@ -229,7 +229,7 @@ async function getUserPhoneNumbers(userId) {
  * Used for EUR subscriptions where we assign from pre-purchased pool
  *
  * @param {string} userId - User ID
- * @param {string} planId - Plan ID (starter, growth, scale)
+ * @param {string} planId - Plan ID (starter, growth, pro)
  * @param {Object} userInfo - User info (email, fullName, etc.)
  * @returns {Object} Provisioning result
  */

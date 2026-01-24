@@ -167,8 +167,8 @@ async function updatePlanFeatures(userId, newPlanId) {
   const planLimits = getPlanLimits(newPlanId);
 
   // Update assistant features based on new plan
-  const voiceCloning = ['growth', 'scale'].includes(newPlanId);
-  const customKnowledge = ['scale'].includes(newPlanId);
+  const voiceCloning = ['growth', 'pro'].includes(newPlanId);
+  const customKnowledge = ['pro'].includes(newPlanId);
 
   await supabaseAdmin
     .from('user_assistants')

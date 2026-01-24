@@ -111,7 +111,7 @@ function getNumberPoolService() {
   return numberPoolService;
 }
 
-// Payment Links - mode-specific
+// Payment Links - mode-specific (Jan 2026 pricing with 5-day trial)
 // Pass ?client_reference_id={userId} when redirecting users
 const PAYMENT_LINKS = {
   starter: isLiveMode
@@ -120,9 +120,9 @@ const PAYMENT_LINKS = {
   growth: isLiveMode
     ? process.env.STRIPE_LIVE_PAYMENT_LINK_GROWTH
     : process.env.STRIPE_TEST_PAYMENT_LINK_GROWTH,
-  scale: isLiveMode
-    ? process.env.STRIPE_LIVE_PAYMENT_LINK_SCALE
-    : process.env.STRIPE_TEST_PAYMENT_LINK_SCALE,
+  pro: isLiveMode
+    ? process.env.STRIPE_LIVE_PAYMENT_LINK_PRO
+    : process.env.STRIPE_TEST_PAYMENT_LINK_PRO,
 };
 
 // Get price IDs based on mode
@@ -130,77 +130,110 @@ const getModePriceId = (testPrice, livePrice) => isLiveMode ? livePrice : testPr
 
 // Map Stripe Price IDs to plan IDs (supports both EUR and USD, test and live)
 const PRICE_TO_PLAN = {
-  // EUR prices - Test Mode
+  // EUR prices (Jan 2026) - €49/€199/€599 with 5-day trial
+  // Test Mode
   [process.env.STRIPE_TEST_STARTER_PRICE_EUR]: 'starter',
   [process.env.STRIPE_TEST_GROWTH_PRICE_EUR]: 'growth',
-  [process.env.STRIPE_TEST_SCALE_PRICE_EUR]: 'scale',
-  // EUR prices - Live Mode
+  [process.env.STRIPE_TEST_PRO_PRICE_EUR]: 'pro',
+  // Live Mode
   [process.env.STRIPE_LIVE_STARTER_PRICE_EUR]: 'starter',
   [process.env.STRIPE_LIVE_GROWTH_PRICE_EUR]: 'growth',
-  [process.env.STRIPE_LIVE_SCALE_PRICE_EUR]: 'scale',
-  // USD prices (US market) - if needed
-  [process.env.STRIPE_STARTER_PRICE_USD]: 'starter',
-  [process.env.STRIPE_GROWTH_PRICE_USD]: 'growth',
-  [process.env.STRIPE_SCALE_PRICE_USD]: 'scale',
-  // Legacy (deprecated) - for backwards compatibility
-  [process.env.STRIPE_STARTER_PRICE_EUR]: 'starter',
-  [process.env.STRIPE_GROWTH_PRICE_EUR]: 'growth',
-  [process.env.STRIPE_SCALE_PRICE_EUR]: 'scale',
+  [process.env.STRIPE_LIVE_PRO_PRICE_EUR]: 'pro',
 };
 
-// OrderBot Plan pricing (in cents) - EUR
-// Lite: €19/mo | Growth: €99/mo | Pro: €249/mo
+// VoiceFleet Plan pricing (in cents) - EUR (Jan 2026)
+// Starter: €49/mo | Growth: €199/mo | Pro: €599/mo
 const PLAN_PRICES = {
-  starter: 1900,  // €19/mo (Lite)
-  growth: 9900,   // €99/mo (Growth)
-  scale: 24900    // €249/mo (Pro)
+  starter: 4900,   // €49/mo
+  growth: 19900,   // €199/mo
+  pro: 59900,      // €599/mo
 };
 
-// Per-call rates (in cents) - used for usage tracking
+// Inbound call limits per month
+const INBOUND_CALL_LIMITS = {
+  starter: 100,    // 100 calls/month
+  growth: 500,     // 500 calls/month
+  pro: 1500,       // 1500 calls/month
+};
+
+// Outbound reminder call limits per month (Pro only)
+const OUTBOUND_CALL_LIMITS = {
+  starter: 0,      // Not available
+  growth: 0,       // Not available
+  pro: 200,        // 200 outbound calls/month
+};
+
+// Legacy: Per-call rates (in cents) - not used in new model
 const PER_CALL_RATES = {
-  starter: 95,   // €0.95/call (Lite)
-  growth: 45,    // €0.45/call (Growth)
-  scale: 0       // €0/call (Pro - unlimited)
+  starter: 0,
+  growth: 0,
+  pro: 0,
 };
 
-// Fair use caps (calls per month)
+// Legacy: Fair use caps - replaced by INBOUND_CALL_LIMITS
 const FAIR_USE_CAPS = {
-  starter: null,  // No cap (pay per call)
-  growth: null,   // No cap (pay per call)
-  scale: 1500     // 1500 calls/month
+  starter: 100,
+  growth: 500,
+  pro: 1500,
 };
 
-// Overage pricing per minute (in cents) by plan - legacy, not used in OrderBot
+// Legacy: Overage rates - not used in new model
 const OVERAGE_RATES = {
-  starter: 25,
-  growth: 22,
-  scale: 18
+  starter: 0,
+  growth: 0,
+  pro: 0,
 };
 
-// Plan limits (OrderBot model)
+// Plan limits and features
 const PLAN_LIMITS = {
   starter: {
-    minutesIncluded: 0,  // Pay per call
+    inboundCalls: 100,
+    outboundCalls: 0,
     phoneNumbers: 1,
-    maxConcurrentCalls: 1,
-    maxMinutesPerCall: 15,
-    hoursType: 'all'  // 24/7 for AI
+    googleCalendar: true,
+    outlookCalendar: false,
+    multiStaffCalendar: false,
+    customerSmsConfirmation: false,
+    customerSmsReminders: false,
+    customerVoiceReminders: false,
+    businessEmail: true,
+    businessSms: false,
+    businessWebhook: false,
+    supportLevel: 'docs',
+    trialDays: 5
   },
   growth: {
-    minutesIncluded: 0,  // Pay per call
-    phoneNumbers: 2,
-    maxConcurrentCalls: 3,
-    maxMinutesPerCall: 15,
-    hoursType: 'all'
+    inboundCalls: 500,
+    outboundCalls: 0,
+    phoneNumbers: 1,
+    googleCalendar: true,
+    outlookCalendar: true,
+    multiStaffCalendar: false,
+    customerSmsConfirmation: true,
+    customerSmsReminders: true,
+    customerVoiceReminders: false,
+    businessEmail: true,
+    businessSms: true,
+    businessWebhook: false,
+    supportLevel: 'business_hours',
+    trialDays: 5
   },
-  scale: {
-    minutesIncluded: 0,  // Unlimited (1500 fair use cap)
-    phoneNumbers: 5,
-    maxConcurrentCalls: 10,
-    maxMinutesPerCall: 30,
-    hoursType: 'all',  // 24/7 for AI
-    callsCap: 1500     // Fair use cap
-  }
+  pro: {
+    inboundCalls: 1500,
+    outboundCalls: 200,
+    phoneNumbers: 1,
+    googleCalendar: true,
+    outlookCalendar: true,
+    multiStaffCalendar: true,
+    customerSmsConfirmation: true,
+    customerSmsReminders: true,
+    customerVoiceReminders: true,
+    businessEmail: true,
+    businessSms: true,
+    businessWebhook: true,
+    supportLevel: 'priority_24_7',
+    trialDays: 5
+  },
 };
 
 /**
