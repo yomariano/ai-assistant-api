@@ -34,11 +34,10 @@ class SquareAdapter extends BaseProviderAdapter {
       baseUrl,
     });
 
-    // Create axios instance
+    // Create axios instance - don't set Content-Type globally as GET requests shouldn't have it
     this.client = axios.create({
       baseURL: baseUrl,
       headers: {
-        'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.accessToken}`,
         'Square-Version': '2024-01-18',
       },
@@ -51,11 +50,18 @@ class SquareAdapter extends BaseProviderAdapter {
   async apiRequest(method, endpoint, data = null) {
     console.log('[Square] API Request:', { method, endpoint, hasToken: !!this.accessToken });
     try {
-      const response = await this.client.request({
+      const config = {
         method,
         url: endpoint,
-        data,
-      });
+      };
+
+      // Only include data and Content-Type for requests with body
+      if (data && ['POST', 'PUT', 'PATCH'].includes(method.toUpperCase())) {
+        config.data = data;
+        config.headers = { 'Content-Type': 'application/json' };
+      }
+
+      const response = await this.client.request(config);
       return response.data;
     } catch (error) {
       console.log('[Square] API Error:', {
