@@ -20,10 +20,17 @@ class SimplybookAdapter extends BaseProviderAdapter {
     this.accessToken = null;
     this.tokenExpiresAt = null;
 
+    // SimplyBook has different regional servers:
+    // - simplybook.me (US/default)
+    // - simplybook.it (Italy/EU)
+    // - simplybook.asia (Asia)
+    // Users can find their server from Settings > Custom Features > API
+    const serverDomain = config.config?.serverDomain || 'simplybook.me';
+
     // SimplyBook uses different endpoints for different operations
     // Company login goes in headers (X-Company-Login), not in URL
-    this.loginUrl = 'https://user-api.simplybook.me/login';
-    this.apiUrl = 'https://user-api.simplybook.me/admin';
+    this.loginUrl = `https://user-api.${serverDomain}/login`;
+    this.apiUrl = `https://user-api.${serverDomain}/admin`;
   }
 
   /**
