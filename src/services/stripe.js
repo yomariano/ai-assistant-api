@@ -831,11 +831,12 @@ async function getPlanLimitsAsync(planId) {
   try {
     const config = await getPlanConfigService().getPlanConfig(planId);
     return {
-      minutesIncluded: 0,  // Not used in per-call model
+      inboundCalls: config.inboundCallsLimit || config.callsCap,
+      outboundCalls: config.outboundCallsLimit || 0,
       phoneNumbers: config.phoneNumbers,
       maxConcurrentCalls: config.phoneNumbers * 2,  // 2x phone numbers
       maxMinutesPerCall: config.maxMinutesPerCall,
-      callsCap: config.callsCap,
+      callsCap: config.callsCap,  // Legacy alias for inboundCalls
       hoursType: 'all'  // 24/7 for AI
     };
   } catch (err) {

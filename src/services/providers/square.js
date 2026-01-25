@@ -77,12 +77,14 @@ class SquareAdapter extends BaseProviderAdapter {
    */
   async testConnection() {
     try {
-      const merchant = await this.apiRequest('GET', '/merchants/me');
+      // Square API uses /merchants to list all merchants the token has access to
+      const response = await this.apiRequest('GET', '/merchants');
+      const merchant = response.merchant?.[0];
       return {
         success: true,
         accountInfo: {
-          id: merchant.merchant?.[0]?.id,
-          name: merchant.merchant?.[0]?.business_name,
+          id: merchant?.id,
+          name: merchant?.business_name,
           email: null, // Square doesn't return email in merchant endpoint
         },
       };
@@ -98,7 +100,8 @@ class SquareAdapter extends BaseProviderAdapter {
    * Get account information
    */
   async getAccountInfo() {
-    const merchantResponse = await this.apiRequest('GET', '/merchants/me');
+    // Square API uses /merchants to list all merchants the token has access to
+    const merchantResponse = await this.apiRequest('GET', '/merchants');
     const merchant = merchantResponse.merchant?.[0];
 
     // Get locations

@@ -1,5 +1,6 @@
 const { supabaseAdmin } = require('../services/supabase');
 const { getPlanLimits, getOverageRate } = require('../services/stripe');
+const planConfig = require('../services/planConfig');
 
 /**
  * Check if user can make a call based on subscription and usage
@@ -105,7 +106,7 @@ const checkCallAllowed = async (req, res, next) => {
       });
     }
 
-    // Check usage limits
+    // Check usage limits (call-based model)
     const periodStart = new Date();
     periodStart.setDate(1);
     periodStart.setHours(0, 0, 0, 0);
@@ -138,26 +139,36 @@ const checkCallAllowed = async (req, res, next) => {
       usage = newUsage;
     }
 
-    const minutesUsed = usage?.minutes_used || 0;
     const planId = subscription.plan_id || 'starter';
-    const planLimits = getPlanLimits(planId);
-    const overageRate = getOverageRate(planId);
+    const callsMade = usage?.calls_made || 0;
 
-    const minutesIncluded = planLimits.minutesIncluded;
-    const remainingIncluded = Math.max(0, minutesIncluded - minutesUsed);
-    const isOverage = minutesUsed >= minutesIncluded;
+    // Get call limits from database via planConfig
+    const inboundCallsLimit = await planConfig.getInboundCallsLimit(planId);
+    const maxMinutesPerCall = await planConfig.getMaxMinutesPerCall(planId);
+    const callsRemaining = Math.max(0, inboundCallsLimit - callsMade);
+    const isAtLimit = callsMade >= inboundCallsLimit;
 
-    // All checks passed - allow calls with overage billing
+    // Check if user has exceeded their call limit
+    if (isAtLimit) {
+      return res.status(402).json({
+        error: {
+          code: 'CALL_LIMIT_REACHED',
+          message: `You have used all ${inboundCallsLimit} calls for this month. Please upgrade your plan or wait until next billing cycle.`,
+          callsMade,
+          callsLimit: inboundCallsLimit
+        }
+      });
+    }
+
+    // All checks passed - allow the call
     req.callLimits = {
       allowed: true,
       isTrial: false,
-      minutesUsed,
-      minutesIncluded,
-      minutesRemaining: remainingIncluded,
-      isOverage,
-      overageRate, // cents per minute
-      maxMinutes: planLimits.maxMinutesPerCall,
-      maxConcurrentCalls: planLimits.maxConcurrentCalls,
+      callsMade,
+      callsLimit: inboundCallsLimit,
+      callsRemaining,
+      isAtLimit,
+      maxMinutes: maxMinutesPerCall,
       planId: planId
     };
     next();

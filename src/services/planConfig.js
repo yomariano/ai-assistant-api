@@ -52,7 +52,10 @@ async function loadPlans() {
         description: plan.description,
         priceCents: plan.price_cents,
         perCallCents: plan.per_call_cents || 0,
-        callsCap: plan.calls_cap,
+        // Use inbound_calls_limit as the fair use cap (calls_cap is legacy naming)
+        callsCap: plan.inbound_calls_limit || plan.calls_cap || null,
+        inboundCallsLimit: plan.inbound_calls_limit || 100,
+        outboundCallsLimit: plan.outbound_calls_limit || 0,
         phoneNumbers: plan.phone_numbers || 1,
         maxMinutesPerCall: plan.max_minutes_per_call || 15,
         features: plan.features || [],
@@ -82,6 +85,8 @@ function getFallbackPlans() {
       priceCents: 4900,
       perCallCents: 0,
       callsCap: 100,
+      inboundCallsLimit: 100,
+      outboundCallsLimit: 0,
       phoneNumbers: 1,
       maxMinutesPerCall: 15,
     },
@@ -92,6 +97,8 @@ function getFallbackPlans() {
       priceCents: 19900,
       perCallCents: 0,
       callsCap: 500,
+      inboundCallsLimit: 500,
+      outboundCallsLimit: 0,
       phoneNumbers: 1,
       maxMinutesPerCall: 15,
     },
@@ -102,6 +109,8 @@ function getFallbackPlans() {
       priceCents: 59900,
       perCallCents: 0,
       callsCap: 1500,
+      inboundCallsLimit: 1500,
+      outboundCallsLimit: 200,
       phoneNumbers: 1,
       maxMinutesPerCall: 30,
     },
@@ -137,13 +146,34 @@ async function getPerCallRate(planId) {
 }
 
 /**
- * Get fair use cap for a plan
+ * Get fair use cap for a plan (inbound calls limit)
  * @param {string} planId - Plan identifier
  * @returns {Promise<number|null>} Cap or null if unlimited
  */
 async function getFairUseCap(planId) {
   const config = await getPlanConfig(planId);
-  return config.callsCap;
+  // callsCap is populated from inbound_calls_limit in the database
+  return config.callsCap || config.inboundCallsLimit || null;
+}
+
+/**
+ * Get inbound calls limit for a plan
+ * @param {string} planId - Plan identifier
+ * @returns {Promise<number>} Inbound calls limit
+ */
+async function getInboundCallsLimit(planId) {
+  const config = await getPlanConfig(planId);
+  return config.inboundCallsLimit || 100;
+}
+
+/**
+ * Get outbound calls limit for a plan
+ * @param {string} planId - Plan identifier
+ * @returns {Promise<number>} Outbound calls limit (0 for starter/growth, 200 for pro)
+ */
+async function getOutboundCallsLimit(planId) {
+  const config = await getPlanConfig(planId);
+  return config.outboundCallsLimit || 0;
 }
 
 /**
@@ -214,6 +244,8 @@ module.exports = {
   getAllPlans,
   getPerCallRate,
   getFairUseCap,
+  getInboundCallsLimit,
+  getOutboundCallsLimit,
   getPhoneNumberLimit,
   getMaxMinutesPerCall,
   canMakeCall,
