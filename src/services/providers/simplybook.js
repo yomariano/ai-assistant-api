@@ -31,6 +31,14 @@ class SimplybookAdapter extends BaseProviderAdapter {
     // Company login goes in headers (X-Company-Login), not in URL
     this.loginUrl = `https://user-api.${serverDomain}/login`;
     this.apiUrl = `https://user-api.${serverDomain}/admin`;
+
+    console.log('[SimplyBook] Adapter initialized:', {
+      companyLogin: this.companyLogin,
+      serverDomain: serverDomain,
+      loginUrl: this.loginUrl,
+      apiUrl: this.apiUrl,
+      configReceived: JSON.stringify(config.config),
+    });
   }
 
   /**
@@ -39,8 +47,15 @@ class SimplybookAdapter extends BaseProviderAdapter {
   async authenticate() {
     // Check if token is still valid
     if (this.accessToken && this.tokenExpiresAt && new Date() < this.tokenExpiresAt) {
+      console.log('[SimplyBook] Using cached token');
       return this.accessToken;
     }
+
+    console.log('[SimplyBook] Authenticating...', {
+      loginUrl: this.loginUrl,
+      companyLogin: this.companyLogin,
+      apiKeyLength: this.apiKey?.length || 0,
+    });
 
     const response = await axios.post(this.loginUrl, {
       jsonrpc: '2.0',
@@ -48,6 +63,8 @@ class SimplybookAdapter extends BaseProviderAdapter {
       params: [this.companyLogin, this.apiKey],
       id: 1,
     });
+
+    console.log('[SimplyBook] Auth response:', JSON.stringify(response.data, null, 2));
 
     if (response.data.error) {
       throw new Error(`SimplyBook auth error: ${response.data.error.message}`);
@@ -57,6 +74,7 @@ class SimplybookAdapter extends BaseProviderAdapter {
     // Token expires in 1 hour
     this.tokenExpiresAt = new Date(Date.now() + 55 * 60 * 1000);
 
+    console.log('[SimplyBook] Authentication successful, token received');
     return this.accessToken;
   }
 
@@ -65,6 +83,13 @@ class SimplybookAdapter extends BaseProviderAdapter {
    */
   async apiRequest(method, params = []) {
     const token = await this.authenticate();
+
+    console.log('[SimplyBook] API Request:', {
+      url: this.apiUrl,
+      method: method,
+      companyLogin: this.companyLogin,
+      tokenLength: token?.length || 0,
+    });
 
     const response = await axios.post(this.apiUrl, {
       jsonrpc: '2.0',
@@ -77,6 +102,8 @@ class SimplybookAdapter extends BaseProviderAdapter {
         'X-Token': token,
       },
     });
+
+    console.log('[SimplyBook] API Response:', JSON.stringify(response.data, null, 2));
 
     if (response.data.error) {
       const errMsg = response.data.error.message || response.data.error.data || JSON.stringify(response.data.error);
