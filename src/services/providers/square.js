@@ -13,6 +13,7 @@ const { BaseProviderAdapter } = require('./interface');
 
 const API_BASE_URL = 'https://connect.squareup.com/v2';
 const SANDBOX_API_BASE_URL = 'https://connect.squareupsandbox.com/v2';
+const OAUTH_BASE_URL = 'https://connect.squareup.com'; // OAuth endpoints don't use /v2
 
 class SquareAdapter extends BaseProviderAdapter {
   constructor(config) {
@@ -120,7 +121,13 @@ class SquareAdapter extends BaseProviderAdapter {
     const clientId = process.env.SQUARE_CLIENT_ID;
     const clientSecret = process.env.SQUARE_CLIENT_SECRET;
 
-    const response = await axios.post(`${API_BASE_URL}/oauth2/token`, {
+    console.log('[Square] Exchanging code for tokens:', {
+      clientIdLength: clientId?.length || 0,
+      hasClientSecret: !!clientSecret,
+      redirectUri,
+    });
+
+    const response = await axios.post(`${OAUTH_BASE_URL}/oauth2/token`, {
       client_id: clientId,
       client_secret: clientSecret,
       code: code,
@@ -145,7 +152,7 @@ class SquareAdapter extends BaseProviderAdapter {
     const clientId = process.env.SQUARE_CLIENT_ID;
     const clientSecret = process.env.SQUARE_CLIENT_SECRET;
 
-    const response = await axios.post(`${API_BASE_URL}/oauth2/token`, {
+    const response = await axios.post(`${OAUTH_BASE_URL}/oauth2/token`, {
       client_id: clientId,
       client_secret: clientSecret,
       refresh_token: this.refreshToken,
