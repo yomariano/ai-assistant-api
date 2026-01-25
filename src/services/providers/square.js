@@ -43,6 +43,7 @@ class SquareAdapter extends BaseProviderAdapter {
    * Make an authenticated API request
    */
   async apiRequest(method, endpoint, data = null) {
+    console.log('[Square] API Request:', { method, endpoint, hasToken: !!this.accessToken });
     try {
       const response = await this.client.request({
         method,
@@ -51,6 +52,13 @@ class SquareAdapter extends BaseProviderAdapter {
       });
       return response.data;
     } catch (error) {
+      console.log('[Square] API Error:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: typeof error.response?.data === 'string'
+          ? error.response.data.substring(0, 200)
+          : error.response?.data,
+      });
       if (error.response) {
         const errors = error.response.data?.errors || [];
         const message = errors[0]?.detail || error.response.statusText;
