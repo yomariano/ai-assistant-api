@@ -61,9 +61,7 @@ class SquareAdapter extends BaseProviderAdapter {
       console.log('[Square] API Error:', {
         status: error.response?.status,
         statusText: error.response?.statusText,
-        data: typeof error.response?.data === 'string'
-          ? error.response.data.substring(0, 200)
-          : error.response?.data,
+        data: JSON.stringify(error.response?.data, null, 2),
       });
       if (error.response) {
         const errors = error.response.data?.errors || [];
