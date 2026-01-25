@@ -28,6 +28,12 @@ class SquareAdapter extends BaseProviderAdapter {
 
     const baseUrl = this.useSandbox ? SANDBOX_API_BASE_URL : API_BASE_URL;
 
+    console.log('[Square] Adapter initialized:', {
+      hasAccessToken: !!this.accessToken,
+      accessTokenLength: this.accessToken?.length || 0,
+      baseUrl,
+    });
+
     // Create axios instance
     this.client = axios.create({
       baseURL: baseUrl,

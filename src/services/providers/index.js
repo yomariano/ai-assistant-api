@@ -196,6 +196,12 @@ function getAdapter(providerId, config) {
  * Get an adapter instance from a connection
  */
 async function getAdapterFromConnection(connection) {
+  console.log('[Providers] getAdapterFromConnection:', {
+    providerId: connection.provider_id,
+    hasAccessToken: !!connection.access_token,
+    accessTokenLength: connection.access_token?.length || 0,
+  });
+
   const config = {
     accessToken: connection.access_token,
     refreshToken: connection.refresh_token,
