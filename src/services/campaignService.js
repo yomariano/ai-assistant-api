@@ -124,7 +124,7 @@ function wrapInBaseTemplate(content, preheader = '') {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OrderBot</title>
+  <title>VoiceFleet</title>
   <style>
     body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5; }
     .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
@@ -146,16 +146,16 @@ function wrapInBaseTemplate(content, preheader = '') {
   <div class="preheader">${preheader}</div>
   <div class="container">
     <div class="header">
-      <h1>OrderBot</h1>
-      <p>AI Voice Assistant for Restaurants</p>
+      <h1>VoiceFleet</h1>
+      <p>AI Voice Assistant for Business</p>
     </div>
     <div class="content">
       ${content}
     </div>
     <div class="footer">
-      <p>OrderBot by VoiceFleet</p>
+      <p>VoiceFleet</p>
       <p><a href="${EMAIL_CONFIG.baseUrl}">voicefleet.ai</a> | <a href="mailto:${EMAIL_CONFIG.replyTo}">Contact Support</a></p>
-      <p style="margin-top: 16px;">You're receiving this email because you have an OrderBot account.</p>
+      <p style="margin-top: 16px;">You're receiving this email because you have a VoiceFleet account.</p>
       <p><a href="${EMAIL_CONFIG.baseUrl}/unsubscribe">Unsubscribe from marketing emails</a></p>
     </div>
   </div>

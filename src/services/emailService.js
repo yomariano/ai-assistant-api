@@ -1,7 +1,7 @@
 /**
  * Email Service
  *
- * Handles transactional and marketing emails for OrderBot.
+ * Handles transactional and marketing emails for VoiceFleet.
  * Uses Resend for email delivery.
  */
 
@@ -46,7 +46,7 @@ const PLAN_DETAILS = {
 // ============================================
 
 /**
- * Base HTML template with OrderBot branding
+ * Base HTML template with VoiceFleet branding
  */
 function baseTemplate(content, preheader = '') {
   return `
@@ -55,7 +55,7 @@ function baseTemplate(content, preheader = '') {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OrderBot</title>
+  <title>VoiceFleet</title>
   <style>
     body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5; }
     .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
@@ -81,16 +81,16 @@ function baseTemplate(content, preheader = '') {
   <div class="preheader">${preheader}</div>
   <div class="container">
     <div class="header">
-      <h1>OrderBot</h1>
-      <p>AI Voice Assistant for Restaurants</p>
+      <h1>VoiceFleet</h1>
+      <p>AI Voice Assistant for Business</p>
     </div>
     <div class="content">
       ${content}
     </div>
     <div class="footer">
-      <p>OrderBot by VoiceFleet</p>
+      <p>VoiceFleet</p>
       <p><a href="${EMAIL_CONFIG.baseUrl}">voicefleet.ai</a> | <a href="mailto:${EMAIL_CONFIG.replyTo}">Contact Support</a></p>
-      <p style="margin-top: 16px;">You're receiving this email because you have an OrderBot account.</p>
+      <p style="margin-top: 16px;">You're receiving this email because you have a VoiceFleet account.</p>
     </div>
   </div>
 </body>
@@ -107,9 +107,9 @@ function welcomeEmailTemplate(data) {
   const firstName = userName ? userName.split(' ')[0] : 'there';
 
   const content = `
-    <h2>Welcome to OrderBot! 🎉</h2>
+    <h2>Welcome to VoiceFleet! 🎉</h2>
     <p>Hi ${firstName},</p>
-    <p>Thank you for subscribing to OrderBot! Your AI-powered phone assistant is ready to start taking orders for your restaurant.</p>
+    <p>Thank you for subscribing to VoiceFleet! Your AI-powered phone assistant is ready to start handling calls for your business.</p>
 
     <div class="info-box">
       <div class="info-row">
@@ -129,9 +129,9 @@ function welcomeEmailTemplate(data) {
     <h3 style="color: #18181b; margin: 24px 0 12px;">Getting Started</h3>
     <ol style="color: #52525b; line-height: 1.8; padding-left: 20px;">
       <li><strong>Configure your AI assistant</strong> - Set your business name and greeting</li>
-      <li><strong>Set up notifications</strong> - Choose how you want to receive order alerts</li>
+      <li><strong>Set up notifications</strong> - Choose how you want to receive call alerts</li>
       <li><strong>Forward your calls</strong> - We'll provide you with a phone number to forward to</li>
-      <li><strong>Start taking orders!</strong> - Your AI is ready to handle calls 24/7</li>
+      <li><strong>Start taking calls!</strong> - Your AI is ready to handle calls 24/7</li>
     </ol>
 
     <p style="text-align: center;">
@@ -140,14 +140,14 @@ function welcomeEmailTemplate(data) {
 
     <p>If you have any questions, just reply to this email or contact us at <a href="mailto:${EMAIL_CONFIG.replyTo}">${EMAIL_CONFIG.replyTo}</a>.</p>
 
-    <p>We're excited to help you never miss another order!</p>
-    <p>– The OrderBot Team</p>
+    <p>We're excited to help you never miss another call!</p>
+    <p>– The VoiceFleet Team</p>
   `;
 
   return {
-    subject: `Welcome to OrderBot! Let's get you set up 🚀`,
-    html: baseTemplate(content, `Welcome to OrderBot, ${firstName}! Your AI phone assistant is ready.`),
-    text: `Welcome to OrderBot!\n\nHi ${firstName},\n\nThank you for subscribing to OrderBot ${plan.name} (${plan.price}/month).\n\nYour AI-powered phone assistant is ready to start taking orders for your restaurant.\n\nGet started: ${EMAIL_CONFIG.baseUrl}/dashboard\n\n– The OrderBot Team`,
+    subject: `Welcome to VoiceFleet! Let's get you set up 🚀`,
+    html: baseTemplate(content, `Welcome to VoiceFleet, ${firstName}! Your AI phone assistant is ready.`),
+    text: `Welcome to VoiceFleet!\n\nHi ${firstName},\n\nThank you for subscribing to VoiceFleet ${plan.name} (${plan.price}/month).\n\nYour AI-powered phone assistant is ready to start handling calls for your business.\n\nGet started: ${EMAIL_CONFIG.baseUrl}/dashboard\n\n– The VoiceFleet Team`,
   };
 }
 
@@ -189,14 +189,14 @@ function subscriptionConfirmationTemplate(data) {
 
     <p>You can manage your subscription anytime from your <a href="${EMAIL_CONFIG.baseUrl}/billing">billing settings</a>.</p>
 
-    <p>Thank you for choosing OrderBot!</p>
-    <p>– The OrderBot Team</p>
+    <p>Thank you for choosing VoiceFleet!</p>
+    <p>– The VoiceFleet Team</p>
   `;
 
   return {
-    subject: `Payment confirmed - OrderBot ${plan.name}`,
-    html: baseTemplate(content, `Your OrderBot payment of ${formattedAmount} has been confirmed.`),
-    text: `Payment Confirmed\n\nHi ${firstName},\n\nWe've received your payment of ${formattedAmount} for OrderBot ${plan.name}.\n\nNext billing date: ${formattedDate}\n\nManage subscription: ${EMAIL_CONFIG.baseUrl}/billing\n\n– The OrderBot Team`,
+    subject: `Payment confirmed - VoiceFleet ${plan.name}`,
+    html: baseTemplate(content, `Your VoiceFleet payment of ${formattedAmount} has been confirmed.`),
+    text: `Payment Confirmed\n\nHi ${firstName},\n\nWe've received your payment of ${formattedAmount} for VoiceFleet ${plan.name}.\n\nNext billing date: ${formattedDate}\n\nManage subscription: ${EMAIL_CONFIG.baseUrl}/billing\n\n– The VoiceFleet Team`,
   };
 }
 
@@ -212,7 +212,7 @@ function paymentFailedTemplate(data) {
   const content = `
     <h2>Payment Failed</h2>
     <p>Hi ${firstName},</p>
-    <p>We were unable to process your payment of ${formattedAmount} for your OrderBot ${plan.name} subscription.</p>
+    <p>We were unable to process your payment of ${formattedAmount} for your VoiceFleet ${plan.name} subscription.</p>
 
     <p>This could be due to:</p>
     <ul style="color: #52525b; line-height: 1.8;">
@@ -231,13 +231,13 @@ function paymentFailedTemplate(data) {
 
     <p>Need help? Contact us at <a href="mailto:${EMAIL_CONFIG.replyTo}">${EMAIL_CONFIG.replyTo}</a>.</p>
 
-    <p>– The OrderBot Team</p>
+    <p>– The VoiceFleet Team</p>
   `;
 
   return {
     subject: `⚠️ Payment failed - Action required`,
-    html: baseTemplate(content, `We couldn't process your OrderBot payment. Please update your payment method.`),
-    text: `Payment Failed\n\nHi ${firstName},\n\nWe were unable to process your payment of ${formattedAmount} for OrderBot ${plan.name}.\n\nPlease update your payment method: ${EMAIL_CONFIG.baseUrl}/billing\n\n– The OrderBot Team`,
+    html: baseTemplate(content, `We couldn't process your VoiceFleet payment. Please update your payment method.`),
+    text: `Payment Failed\n\nHi ${firstName},\n\nWe were unable to process your payment of ${formattedAmount} for VoiceFleet ${plan.name}.\n\nPlease update your payment method: ${EMAIL_CONFIG.baseUrl}/billing\n\n– The VoiceFleet Team`,
   };
 }
 
@@ -281,7 +281,7 @@ function usageAlertEmailTemplate(data) {
 
     <p>If you have questions about your usage, contact us at <a href="mailto:${EMAIL_CONFIG.replyTo}">${EMAIL_CONFIG.replyTo}</a>.</p>
 
-    <p>– The OrderBot Team</p>
+    <p>– The VoiceFleet Team</p>
   `;
 
   return {
@@ -289,7 +289,7 @@ function usageAlertEmailTemplate(data) {
       ? `🚨 Usage Limit Reached - ${resourceType}`
       : `⚠️ Usage Alert: ${percentUsed}% of ${resourceType} used`,
     html: baseTemplate(content, `You've used ${percentUsed}% of your ${resourceType} this month.`),
-    text: `Usage Alert\n\nHi ${firstName},\n\nYou've used ${percentUsed}% of your ${resourceType} this month (${currentUsage}/${limit}).\n\n${isUrgent ? 'You\'ve reached your limit!' : 'Consider upgrading your plan.'}\n\nUpgrade: ${EMAIL_CONFIG.baseUrl}/billing\n\n– The OrderBot Team`,
+    text: `Usage Alert\n\nHi ${firstName},\n\nYou've used ${percentUsed}% of your ${resourceType} this month (${currentUsage}/${limit}).\n\n${isUrgent ? 'You\'ve reached your limit!' : 'Consider upgrading your plan.'}\n\nUpgrade: ${EMAIL_CONFIG.baseUrl}/billing\n\n– The VoiceFleet Team`,
   };
 }
 
@@ -309,7 +309,7 @@ function subscriptionCancelledTemplate(data) {
   const content = `
     <h2>Subscription Cancelled</h2>
     <p>Hi ${firstName},</p>
-    <p>Your OrderBot ${plan.name} subscription has been cancelled.</p>
+    <p>Your VoiceFleet ${plan.name} subscription has been cancelled.</p>
 
     <div class="info-box">
       <div class="info-row">
@@ -332,13 +332,13 @@ function subscriptionCancelledTemplate(data) {
 
     <p>We'd love to know why you cancelled. Reply to this email with any feedback.</p>
 
-    <p>– The OrderBot Team</p>
+    <p>– The VoiceFleet Team</p>
   `;
 
   return {
-    subject: `Your OrderBot subscription has been cancelled`,
-    html: baseTemplate(content, `Your OrderBot subscription has been cancelled. Access until ${formattedEndDate}.`),
-    text: `Subscription Cancelled\n\nHi ${firstName},\n\nYour OrderBot ${plan.name} subscription has been cancelled.\n\nYou'll have access until ${formattedEndDate}.\n\nResubscribe: ${EMAIL_CONFIG.baseUrl}/billing\n\n– The OrderBot Team`,
+    subject: `Your VoiceFleet subscription has been cancelled`,
+    html: baseTemplate(content, `Your VoiceFleet subscription has been cancelled. Access until ${formattedEndDate}.`),
+    text: `Subscription Cancelled\n\nHi ${firstName},\n\nYour VoiceFleet ${plan.name} subscription has been cancelled.\n\nYou'll have access until ${formattedEndDate}.\n\nResubscribe: ${EMAIL_CONFIG.baseUrl}/billing\n\n– The VoiceFleet Team`,
   };
 }
 

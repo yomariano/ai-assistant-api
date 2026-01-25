@@ -304,7 +304,7 @@ router.post('/portal', authenticate, async (req, res, next) => {
 
 /**
  * GET /api/billing/usage
- * Get current usage for the billing period (OrderBot pay-per-call model)
+ * Get current usage for the billing period (VoiceFleet pay-per-call model)
  */
 router.get('/usage', authenticate, async (req, res, next) => {
   try {
