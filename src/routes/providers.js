@@ -451,6 +451,13 @@ router.get('/:providerId/oauth/callback', async (req, res) => {
  * Handle OAuth callback (alternative method for frontend-initiated flows)
  */
 router.post('/:providerId/oauth/callback', authenticate, async (req, res, next) => {
+  console.log('[OAuth Callback] POST received:', {
+    providerId: req.params.providerId,
+    hasCode: !!req.body.code,
+    hasState: !!req.body.state,
+    redirectUri: req.body.redirectUri,
+  });
+
   try {
     const { code, state, redirectUri } = req.body;
 
