@@ -367,8 +367,15 @@ async function previewCampaignRecipients(campaignId) {
 
 /**
  * Send a single campaign email
+ * In E2E mode, skips actual sending but returns success for testing
  */
 async function sendCampaignEmail({ to, subject, html, text }) {
+  // E2E mode: simulate success without actually sending
+  if (process.env.E2E_MODE === 'true') {
+    console.log(`[CampaignService] E2E mode - simulating email to ${to}: "${subject}"`);
+    return { success: true, messageId: `e2e-mock-${Date.now()}` };
+  }
+
   const resend = getResendClient();
 
   if (!resend) {

@@ -28,6 +28,7 @@ const {
   updateTrigger,
   processTriggers,
   processSingleTrigger,
+  testTriggerWithMockUser,
 } = require('../services/triggerEngine');
 
 const router = express.Router();
@@ -252,6 +253,33 @@ router.post('/triggers/:id/run', async (req, res) => {
     });
   } catch (error) {
     console.error('[Campaigns] Error running trigger:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/admin/triggers/:id/test
+ * E2E test a trigger with a mock user
+ * Creates a test user matching the trigger conditions, runs the trigger,
+ * verifies the email was "sent" (logged), and cleans up.
+ */
+router.post('/triggers/:id/test', async (req, res) => {
+  try {
+    const triggerId = req.params.id;
+    console.log(`[Campaigns] E2E test for trigger ${triggerId}`);
+
+    const result = await testTriggerWithMockUser(triggerId);
+
+    res.json({
+      success: result.success,
+      triggerId,
+      testUserId: result.testUserId,
+      emailSent: result.emailSent,
+      triggerLog: result.triggerLog,
+      error: result.error,
+    });
+  } catch (error) {
+    console.error('[Campaigns] Error testing trigger:', error);
     res.status(500).json({ error: error.message });
   }
 });

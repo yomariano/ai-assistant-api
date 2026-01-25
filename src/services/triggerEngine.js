@@ -663,6 +663,245 @@ async function updateTrigger(triggerId, updates) {
 }
 
 // ============================================
+// E2E TESTING
+// ============================================
+
+/**
+ * Test a trigger with a mock user for E2E testing
+ * Creates a test user matching the trigger conditions, runs the trigger,
+ * verifies the email was sent, and cleans up.
+ */
+async function testTriggerWithMockUser(triggerId) {
+  const trigger = await getTrigger(triggerId);
+  if (!trigger) {
+    return { success: false, error: `Trigger not found: ${triggerId}` };
+  }
+
+  const testEmail = `e2e-test-${Date.now()}@test.voicefleet.ai`;
+  let testUserId = null;
+
+  try {
+    // Step 1: Create a test user with backdated data matching the trigger
+    const testUserData = await createTestUserForTrigger(trigger, testEmail);
+    testUserId = testUserData.userId;
+
+    console.log(`[TriggerEngine] Created test user ${testUserId} for trigger ${triggerId}`);
+
+    // Step 2: Clear any existing trigger logs for this user (from previous test runs)
+    await supabaseAdmin
+      .from('trigger_logs')
+      .delete()
+      .eq('user_id', testUserId)
+      .eq('trigger_id', triggerId);
+
+    // Step 3: Process the trigger - it should find and email our test user
+    const users = await getUsersForTrigger(trigger);
+    const testUser = users.find(u => u.id === testUserId);
+
+    if (!testUser) {
+      // Clean up and return error
+      await cleanupTestUser(testUserId);
+      return {
+        success: false,
+        error: 'Test user did not match trigger conditions',
+        testUserId,
+        usersFound: users.length,
+      };
+    }
+
+    // Step 4: Send the trigger email to the test user
+    const sendResult = await sendTriggerEmail(trigger, testUser);
+
+    // Step 5: Check trigger_logs for the sent email
+    const { data: triggerLog } = await supabaseAdmin
+      .from('trigger_logs')
+      .select('*')
+      .eq('user_id', testUserId)
+      .eq('trigger_id', triggerId)
+      .order('sent_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    // Step 6: Clean up the test user
+    await cleanupTestUser(testUserId);
+
+    return {
+      success: sendResult.success,
+      testUserId,
+      emailSent: sendResult.success,
+      triggerLog: triggerLog || null,
+      error: sendResult.error,
+    };
+  } catch (error) {
+    console.error(`[TriggerEngine] E2E test error for ${triggerId}:`, error);
+
+    // Clean up on error
+    if (testUserId) {
+      await cleanupTestUser(testUserId);
+    }
+
+    return {
+      success: false,
+      error: error.message,
+      testUserId,
+    };
+  }
+}
+
+/**
+ * Create a test user with data matching a trigger's conditions
+ */
+async function createTestUserForTrigger(trigger, testEmail) {
+  const condition = trigger.condition_json;
+  const now = new Date();
+
+  // Create base user
+  const { data: user, error: userError } = await supabaseAdmin
+    .from('users')
+    .insert({
+      email: testEmail,
+      full_name: 'E2E Test User',
+      created_at: now.toISOString(),
+      last_active_at: now.toISOString(),
+    })
+    .select()
+    .single();
+
+  if (userError) {
+    throw new Error(`Failed to create test user: ${userError.message}`);
+  }
+
+  const userId = user.id;
+
+  // Create subscription based on trigger type
+  let planId = 'starter';
+  if (trigger.trigger_type === 'usage') {
+    planId = 'pro'; // Usage triggers target pro plan
+  }
+
+  await supabaseAdmin
+    .from('user_subscriptions')
+    .insert({
+      user_id: userId,
+      plan_id: planId,
+      status: 'active',
+      current_period_start: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      current_period_end: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+
+  // Create notification preferences (marketing emails enabled)
+  await supabaseAdmin
+    .from('notification_preferences')
+    .insert({
+      user_id: userId,
+      marketing_emails: true,
+    });
+
+  // Set up trigger-specific data
+  switch (trigger.trigger_type) {
+    case 'usage': {
+      // Create usage tracking at the target percentage
+      const targetPercent = condition.usage_percent || 80;
+      const fairUseCap = 1500;
+      const callsMade = Math.floor((fairUseCap * targetPercent) / 100);
+
+      const periodStart = new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000);
+      const periodEnd = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000);
+
+      await supabaseAdmin
+        .from('usage_tracking')
+        .insert({
+          user_id: userId,
+          period_start: periodStart.toISOString().split('T')[0],
+          period_end: periodEnd.toISOString().split('T')[0],
+          calls_made: callsMade,
+        });
+      break;
+    }
+
+    case 'inactivity': {
+      // Backdate last_active_at to match inactivity condition
+      const daysInactive = condition.days_inactive || 7;
+      const lastActiveAt = new Date(now.getTime() - daysInactive * 24 * 60 * 60 * 1000);
+
+      await supabaseAdmin
+        .from('users')
+        .update({ last_active_at: lastActiveAt.toISOString() })
+        .eq('id', userId);
+      break;
+    }
+
+    case 'abandoned_upgrade': {
+      // Create a pricing_view event at the target time
+      const hoursSinceView = condition.hours_since_view || 1;
+      const viewedAt = new Date(now.getTime() - hoursSinceView * 60 * 60 * 1000);
+
+      await supabaseAdmin
+        .from('user_events')
+        .insert({
+          user_id: userId,
+          event_type: 'pricing_view',
+          created_at: viewedAt.toISOString(),
+        });
+      break;
+    }
+
+    case 'welcome_sequence': {
+      // Backdate created_at to match days since signup
+      const daysSinceSignup = condition.days_since_signup || 2;
+      const createdAt = new Date(now.getTime() - daysSinceSignup * 24 * 60 * 60 * 1000);
+
+      await supabaseAdmin
+        .from('users')
+        .update({ created_at: createdAt.toISOString() })
+        .eq('id', userId);
+      break;
+    }
+
+    case 'social_proof': {
+      // Create call history entries
+      const minCalls = condition.min_calls_last_week || 1;
+      const calls = [];
+      for (let i = 0; i < minCalls; i++) {
+        calls.push({
+          user_id: userId,
+          call_id: `e2e-test-call-${Date.now()}-${i}`,
+          status: 'completed',
+          created_at: new Date(now.getTime() - i * 24 * 60 * 60 * 1000).toISOString(),
+        });
+      }
+
+      if (calls.length > 0) {
+        await supabaseAdmin.from('call_history').insert(calls);
+      }
+      break;
+    }
+  }
+
+  return { userId };
+}
+
+/**
+ * Clean up a test user and all related data
+ */
+async function cleanupTestUser(userId) {
+  try {
+    // Delete in order of dependencies
+    await supabaseAdmin.from('trigger_logs').delete().eq('user_id', userId);
+    await supabaseAdmin.from('call_history').delete().eq('user_id', userId);
+    await supabaseAdmin.from('user_events').delete().eq('user_id', userId);
+    await supabaseAdmin.from('usage_tracking').delete().eq('user_id', userId);
+    await supabaseAdmin.from('notification_preferences').delete().eq('user_id', userId);
+    await supabaseAdmin.from('user_subscriptions').delete().eq('user_id', userId);
+    await supabaseAdmin.from('users').delete().eq('id', userId);
+
+    console.log(`[TriggerEngine] Cleaned up test user ${userId}`);
+  } catch (error) {
+    console.error(`[TriggerEngine] Error cleaning up test user ${userId}:`, error);
+  }
+}
+
+// ============================================
 // EXPORTS
 // ============================================
 
@@ -681,4 +920,7 @@ module.exports = {
   getUsersForTrigger,
   checkAlreadySent,
   sendTriggerEmail,
+
+  // E2E testing
+  testTriggerWithMockUser,
 };

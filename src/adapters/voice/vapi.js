@@ -44,6 +44,8 @@ class VapiProvider {
       maxDurationSeconds = 600,
       tools = [],
       escalationSettings = null,
+      endCallFunctionEnabled = true,
+      endCallMessage = 'Thank you for calling. Goodbye!',
     } = config;
 
     const payload = {
@@ -72,6 +74,9 @@ class VapiProvider {
       },
       maxDurationSeconds,
       firstMessageMode: config.firstMessageMode || 'assistant-speaks-first',
+      // Enable assistant to end calls properly
+      endCallFunctionEnabled,
+      endCallMessage,
     };
 
     // Add transfer call tool if escalation is enabled

@@ -54,7 +54,10 @@ const DEFAULT_ASSISTANT_TEMPLATE = {
   maxDurationSeconds: 600, // 10 min max call
   backgroundSound: 'office',
   backchannelingEnabled: true,
-  backgroundDenoisingEnabled: true
+  backgroundDenoisingEnabled: true,
+  // Enable end call function so AI can properly hang up
+  endCallFunctionEnabled: true,
+  endCallMessage: 'Thank you for calling. Goodbye!'
 };
 
 /**
@@ -276,6 +279,16 @@ Guidelines:
 - Be warm and professional
 - If you don't know something, say so honestly
 - Always confirm important details back to the caller
+
+ENDING CALLS (Critical - you MUST end calls properly using the endCall function):
+- You have an "endCall" function available. USE IT to hang up the phone when the conversation is complete.
+- After completing the caller's request AND they confirm they have no more questions, say "Thank you for calling, goodbye!" and IMMEDIATELY call the endCall function
+- Use phrases like "Is there anything else I can help you with?" - if they say no/nothing/that's all, say goodbye and call endCall
+- Signs the call should end: "No that's all", "That's everything", "I'm good", "Nothing else", "Thanks bye", "Thank you goodbye", "No thanks"
+- After a booking is confirmed and they have no other questions, end the call with endCall
+- Do NOT keep talking after saying goodbye - call endCall IMMEDIATELY after your goodbye
+- Do NOT ask multiple times if they need anything else - one confirmation is enough, then end the call
+- When the conversation reaches a natural end, CALL endCall - don't wait for silence or the customer to hang up
 
 SPEECH RULES (Critical for natural phone conversation):
 - DATES: Always say dates naturally like "Thursday, January twenty-second" or "the twenty-second of January", NEVER as numbers like "22-01-2026" or "01/22/2026"

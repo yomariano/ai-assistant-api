@@ -30,7 +30,7 @@ class SimplybookAdapter extends BaseProviderAdapter {
     // SimplyBook uses different endpoints for different operations
     // Company login goes in headers (X-Company-Login), not in URL
     this.loginUrl = `https://user-api.${serverDomain}/login`;
-    this.apiUrl = `https://user-api.${serverDomain}/admin`;
+    this.apiUrl = `https://user-api.${serverDomain}/`;
 
     console.log('[SimplyBook] Adapter initialized:', {
       companyLogin: this.companyLogin,
