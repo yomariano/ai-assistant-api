@@ -501,11 +501,11 @@ async function handleLookupBooking(userId, args, context) {
 // ============================================
 
 /**
- * Get user's active (connected) provider connection
+ * Get user's primary (or first active) provider connection
+ * Uses the primary provider if set, otherwise falls back to first connected
  */
 async function getActiveProviderConnection(userId) {
-  const connections = await providerService.getConnections(userId);
-  return connections.find(c => c.status === 'connected');
+  return await providerService.getPrimaryConnection(userId);
 }
 
 /**

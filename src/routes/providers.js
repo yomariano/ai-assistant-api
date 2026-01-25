@@ -104,6 +104,7 @@ router.get('/connections/list', authenticate, async (req, res, next) => {
           category: c.booking_providers.category,
         } : null,
         status: c.status,
+        isPrimary: c.is_primary || false,
         errorMessage: c.error_message,
         externalAccountId: c.external_account_id,
         externalAccountName: c.external_account_name,
@@ -143,6 +144,7 @@ router.get('/connections/:id', authenticate, async (req, res, next) => {
           authType: connection.booking_providers.auth_type,
         } : null,
         status: connection.status,
+        isPrimary: connection.is_primary || false,
         errorMessage: connection.error_message,
         externalAccountId: connection.external_account_id,
         externalAccountName: connection.external_account_name,
@@ -183,17 +185,14 @@ router.post('/connections', authenticate, async (req, res, next) => {
       return res.status(400).json({ error: { message: 'API key is required for this provider' } });
     }
 
+    // Pass config directly to connectWithApiKey so it's available during initial test
     const connection = await providerService.connectWithApiKey(
       req.userId,
       providerId,
       apiKey,
-      apiSecret
+      apiSecret,
+      config || {}
     );
-
-    // If there's additional config, update it
-    if (config) {
-      await providerService.updateConnection(req.userId, connection.id, { config });
-    }
 
     // Get fresh connection with provider details
     const fullConnection = await providerService.getConnection(req.userId, connection.id);
@@ -288,6 +287,64 @@ router.post('/connections/:id/test', authenticate, async (req, res, next) => {
   try {
     const result = await providerService.testConnection(req.userId, req.params.id);
     res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/providers/connections/:id/set-primary
+ * Set a connection as the primary booking provider
+ */
+router.post('/connections/:id/set-primary', authenticate, async (req, res, next) => {
+  try {
+    const connection = await providerService.setPrimaryProvider(req.userId, req.params.id);
+
+    res.json({
+      success: true,
+      connection: {
+        id: connection.id,
+        providerId: connection.provider_id,
+        isPrimary: connection.is_primary,
+        provider: connection.booking_providers ? {
+          name: connection.booking_providers.name,
+          icon: connection.booking_providers.icon,
+        } : null,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/providers/connections/primary
+ * Get the user's primary booking provider connection
+ */
+router.get('/connections/primary', authenticate, async (req, res, next) => {
+  try {
+    const connection = await providerService.getPrimaryConnection(req.userId);
+
+    if (!connection) {
+      return res.json({ connection: null });
+    }
+
+    res.json({
+      connection: {
+        id: connection.id,
+        providerId: connection.provider_id,
+        provider: connection.booking_providers ? {
+          name: connection.booking_providers.name,
+          icon: connection.booking_providers.icon,
+          category: connection.booking_providers.category,
+        } : null,
+        status: connection.status,
+        isPrimary: connection.is_primary,
+        externalAccountId: connection.external_account_id,
+        externalAccountName: connection.external_account_name,
+        connectedAt: connection.connected_at,
+      },
+    });
   } catch (error) {
     next(error);
   }

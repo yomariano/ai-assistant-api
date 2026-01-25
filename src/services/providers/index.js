@@ -235,22 +235,27 @@ async function testConnection(userId, connectionId) {
 /**
  * Connect a provider using API key
  */
-async function connectWithApiKey(userId, providerId, apiKey, apiSecret = null) {
+async function connectWithApiKey(userId, providerId, apiKey, apiSecret = null, config = {}) {
   // Check if connection already exists
   const existing = await getConnectionByProvider(userId, providerId);
   if (existing) {
-    // Update existing connection
-    return updateConnection(userId, existing.id, {
+    // Update existing connection with config included
+    await updateConnection(userId, existing.id, {
       apiKey,
       apiSecret,
+      config,
       status: 'pending',
     });
+    // Test the connection after updating
+    await testConnection(userId, existing.id);
+    return getConnection(userId, existing.id);
   }
 
-  // Create new connection
+  // Create new connection with config included
   const connection = await createConnection(userId, providerId, {
     apiKey,
     apiSecret,
+    config,
   });
 
   // Test the connection
@@ -505,6 +510,68 @@ async function getSyncLogs(userId, connectionId, limit = 50) {
   return data;
 }
 
+/**
+ * Set a provider connection as primary for booking operations
+ * Only one connection can be primary per user
+ */
+async function setPrimaryProvider(userId, connectionId) {
+  // First verify the connection belongs to this user and is connected
+  const connection = await getConnection(userId, connectionId);
+  if (!connection) {
+    throw new Error('Connection not found');
+  }
+  if (connection.status !== 'connected') {
+    throw new Error('Cannot set disconnected provider as primary');
+  }
+
+  // The database trigger will automatically unset other primary connections
+  const { data, error } = await supabaseAdmin
+    .from('provider_connections')
+    .update({ is_primary: true, updated_at: new Date().toISOString() })
+    .eq('user_id', userId)
+    .eq('id', connectionId)
+    .select('*, booking_providers(*)')
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Get the primary provider connection for a user
+ * Returns the first connected provider if no primary is set
+ */
+async function getPrimaryConnection(userId) {
+  // First try to get the primary connection
+  const { data: primary, error: primaryError } = await supabaseAdmin
+    .from('provider_connections')
+    .select('*, booking_providers(*)')
+    .eq('user_id', userId)
+    .eq('status', 'connected')
+    .eq('is_primary', true)
+    .single();
+
+  if (!primaryError && primary) {
+    return primary;
+  }
+
+  // Fallback to first connected provider
+  const { data: fallback, error: fallbackError } = await supabaseAdmin
+    .from('provider_connections')
+    .select('*, booking_providers(*)')
+    .eq('user_id', userId)
+    .eq('status', 'connected')
+    .order('connected_at', { ascending: true })
+    .limit(1)
+    .single();
+
+  if (fallbackError && fallbackError.code !== 'PGRST116') {
+    throw fallbackError;
+  }
+
+  return fallback || null;
+}
+
 module.exports = {
   // Provider management
   getProviders,
@@ -527,6 +594,10 @@ module.exports = {
   connectWithApiKey,
   handleOAuthCallback,
   getOAuthUrl,
+
+  // Primary provider
+  setPrimaryProvider,
+  getPrimaryConnection,
 
   // Booking operations
   syncBookings,
