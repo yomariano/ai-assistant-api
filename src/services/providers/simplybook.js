@@ -21,9 +21,9 @@ class SimplybookAdapter extends BaseProviderAdapter {
     this.tokenExpiresAt = null;
 
     // SimplyBook uses different endpoints for different operations
+    // Company login goes in headers (X-Company-Login), not in URL
     this.loginUrl = 'https://user-api.simplybook.me/login';
-    this.apiUrl = `https://user-api.simplybook.me/${this.companyLogin}`;
-    this.adminApiUrl = `https://user-api.simplybook.me/admin`;
+    this.apiUrl = 'https://user-api.simplybook.me/admin';
   }
 
   /**
@@ -56,11 +56,10 @@ class SimplybookAdapter extends BaseProviderAdapter {
   /**
    * Make a JSON-RPC API request
    */
-  async apiRequest(method, params = [], useAdmin = false) {
+  async apiRequest(method, params = []) {
     const token = await this.authenticate();
-    const url = useAdmin ? this.adminApiUrl : this.apiUrl;
 
-    const response = await axios.post(url, {
+    const response = await axios.post(this.apiUrl, {
       jsonrpc: '2.0',
       method: method,
       params: params,
@@ -73,7 +72,8 @@ class SimplybookAdapter extends BaseProviderAdapter {
     });
 
     if (response.data.error) {
-      throw new Error(`SimplyBook API error: ${response.data.error.message}`);
+      const errMsg = response.data.error.message || response.data.error.data || JSON.stringify(response.data.error);
+      throw new Error(`SimplyBook API error: ${errMsg}`);
     }
 
     return response.data.result;
