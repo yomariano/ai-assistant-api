@@ -173,7 +173,7 @@ ${CONVERSATION_RULES}`,
 
     defaultSettings: {
       greetingName: 'your salon assistant',
-      voiceId: 'Lily', // Natural female voice
+      voiceId: 'Paige', // Clear female voice
       voiceProvider: 'vapi',
     },
 
@@ -360,7 +360,7 @@ ${CONVERSATION_RULES}`,
 
     defaultSettings: {
       greetingName: 'your property assistant',
-      voiceId: 'Jess', // Conversational female voice
+      voiceId: 'Savannah', // Friendly female voice
       voiceProvider: 'vapi',
     },
 

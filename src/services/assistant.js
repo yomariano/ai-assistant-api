@@ -23,7 +23,6 @@ function isValidVapiId(id) {
 const VAPI_VOICES = [
   { id: 'Savannah', provider: 'vapi', name: 'Savannah', gender: 'female', accent: 'american', description: 'friendly' },
   { id: 'Rohan', provider: 'vapi', name: 'Rohan', gender: 'male', accent: 'american', description: 'warm' },
-  { id: 'Lily', provider: 'vapi', name: 'Lily', gender: 'female', accent: 'british', description: 'natural' },
   { id: 'Elliot', provider: 'vapi', name: 'Elliot', gender: 'male', accent: 'american', description: 'conversational' },
   { id: 'Cole', provider: 'vapi', name: 'Cole', gender: 'male', accent: 'american', description: 'professional' },
   { id: 'Paige', provider: 'vapi', name: 'Paige', gender: 'female', accent: 'american', description: 'clear' },
