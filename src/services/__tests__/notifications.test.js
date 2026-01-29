@@ -11,10 +11,6 @@ jest.mock('resend', () => ({
   Resend: jest.fn().mockImplementation(() => mockResend),
 }));
 
-jest.mock('twilio', () => {
-  return jest.fn().mockImplementation(() => mockTwilio);
-});
-
 // Mock objects
 const mockSupabase = {
   from: jest.fn().mockReturnThis(),
@@ -33,22 +29,14 @@ const mockResend = {
   },
 };
 
-const mockTwilio = {
-  messages: {
-    create: jest.fn(),
-  },
-};
-
 // Now require the module
 const {
   formatEmailContent,
-  formatSMSContent,
   getNotificationPreferences,
   updateNotificationPreferences,
   getEscalationSettings,
   updateEscalationSettings,
   sendEmail,
-  sendSMS,
   notifyCallEvent,
   sendTestNotification,
   logNotification,
@@ -60,7 +48,6 @@ describe('Notification Service', () => {
     // Reset mock implementations
     mockSupabase.single.mockResolvedValue({ data: {}, error: null });
     mockResend.emails.send.mockResolvedValue({ id: 'email-123' });
-    mockTwilio.messages.create.mockResolvedValue({ sid: 'sms-123' });
   });
 
   // ============================================
@@ -224,98 +211,12 @@ describe('Notification Service', () => {
   });
 
   // ============================================
-  // SMS CONTENT FORMATTING
-  // ============================================
-  describe('formatSMSContent', () => {
-    const mockCallData = {
-      customerNumber: '+353123456789',
-      summary: 'Customer called to book a table for 4 on Saturday at 7pm. They mentioned dietary requirements.',
-    };
-
-    describe('call_complete SMS', () => {
-      it('should format call_complete SMS correctly', () => {
-        const result = formatSMSContent('call_complete', mockCallData);
-
-        expect(result).toContain('Call from');
-        expect(result).toContain(mockCallData.customerNumber);
-      });
-
-      it('should respect SMS character limit', () => {
-        const result = formatSMSContent('call_complete', mockCallData);
-
-        expect(result.length).toBeLessThanOrEqual(160);
-      });
-    });
-
-    describe('message_taken SMS', () => {
-      it('should format message_taken SMS correctly', () => {
-        const result = formatSMSContent('message_taken', mockCallData);
-
-        expect(result).toContain('New msg');
-        expect(result.length).toBeLessThanOrEqual(160);
-      });
-    });
-
-    describe('escalation SMS', () => {
-      it('should format escalation SMS correctly', () => {
-        const result = formatSMSContent('escalation', mockCallData);
-
-        expect(result).toContain('Escalated');
-        expect(result).toContain('email');
-      });
-
-      it('should be concise for urgent visibility', () => {
-        const result = formatSMSContent('escalation', mockCallData);
-
-        expect(result.length).toBeLessThan(100);
-      });
-    });
-
-    describe('voicemail SMS', () => {
-      it('should format voicemail SMS correctly', () => {
-        const result = formatSMSContent('voicemail', mockCallData);
-
-        expect(result).toContain('Voicemail');
-      });
-    });
-
-    describe('missed_call SMS', () => {
-      it('should format missed_call SMS correctly', () => {
-        const result = formatSMSContent('missed_call', mockCallData);
-
-        expect(result).toContain('Missed call');
-      });
-    });
-
-    describe('truncation', () => {
-      it('should truncate long summaries to fit SMS limit', () => {
-        const longSummary = 'A'.repeat(200);
-        const callDataLong = {
-          ...mockCallData,
-          summary: longSummary,
-        };
-        const result = formatSMSContent('call_complete', callDataLong);
-
-        // SMS is truncated at 100 chars for summary portion
-        expect(result.length).toBeLessThanOrEqual(160);
-      });
-
-      it('should handle missing customerNumber', () => {
-        const result = formatSMSContent('call_complete', { summary: 'Test' });
-
-        expect(result).toContain('Unknown');
-      });
-    });
-  });
-
-  // ============================================
   // NOTIFICATION PREFERENCES
   // ============================================
   describe('getNotificationPreferences', () => {
     it('should return user preferences', async () => {
       const mockPrefs = {
         email_enabled: true,
-        sms_enabled: false,
         email_address: 'test@example.com',
       };
 
@@ -334,7 +235,6 @@ describe('Notification Service', () => {
       const result = await getNotificationPreferences('user-123');
 
       expect(result).toHaveProperty('email_enabled');
-      expect(result).toHaveProperty('sms_enabled');
     });
   });
 
@@ -342,8 +242,7 @@ describe('Notification Service', () => {
     it('should update preferences', async () => {
       const updates = {
         email_enabled: true,
-        sms_enabled: true,
-        sms_number: '+353851234567',
+        email_address: 'test@example.com',
       };
 
       mockSupabase.single.mockResolvedValueOnce({ data: updates, error: null });

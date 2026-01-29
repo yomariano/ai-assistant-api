@@ -8,11 +8,15 @@ const queueManager = require('./queueManager');
 const aiContentGenerator = require('./aiContentGenerator');
 const contentTemplates = require('./contentTemplates');
 const contentPublisher = require('./contentPublisher');
+const comparisonGenerator = require('./comparisonGenerator');
+const comparisonTemplates = require('./comparisonTemplates');
 
 module.exports = {
     seedDataManager,
     queueManager,
     aiContentGenerator,
     contentTemplates,
-    contentPublisher
+    contentPublisher,
+    comparisonGenerator,
+    comparisonTemplates
 };

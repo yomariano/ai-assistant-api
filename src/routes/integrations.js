@@ -66,7 +66,6 @@ router.get('/config', authenticate, async (req, res, next) => {
         calendarProvider: config.calendar_provider,
         calendarId: config.calendar_id,
         calendarConnected: !!config.calendar_credentials,
-        smsConfirmation: config.sms_confirmation,
         emailConfirmation: config.email_confirmation,
         confirmationTemplate: config.confirmation_template,
         isActive: config.is_active,
@@ -104,7 +103,6 @@ router.post('/config', authenticate, async (req, res, next) => {
         calendarProvider: config.calendar_provider,
         calendarId: config.calendar_id,
         calendarConnected: !!config.calendar_credentials,
-        smsConfirmation: config.sms_confirmation,
         emailConfirmation: config.email_confirmation,
         confirmationTemplate: config.confirmation_template,
         isActive: config.is_active

@@ -1,12 +1,11 @@
 /**
  * Notification Service
  *
- * Handles sending email and SMS notifications for call events.
- * Uses Resend for emails and Twilio for SMS.
+ * Handles sending email notifications for call events.
+ * Uses Resend for emails.
  */
 
 const { createClient } = require('@supabase/supabase-js');
-const { isWithinBusinessHours } = require('./business-hours');
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -56,45 +55,6 @@ async function sendEmail({ to, subject, html, text }) {
 }
 
 // ============================================
-// SMS PROVIDER (Twilio)
-// ============================================
-
-let twilioClient = null;
-
-function getTwilioClient() {
-  if (!twilioClient && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-    const twilio = require('twilio');
-    twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-  }
-  return twilioClient;
-}
-
-/**
- * Send an SMS notification
- */
-async function sendSMS({ to, body }) {
-  const twilio = getTwilioClient();
-
-  if (!twilio) {
-    console.warn('Twilio not configured - skipping SMS');
-    return { success: false, error: 'SMS not configured' };
-  }
-
-  try {
-    const message = await twilio.messages.create({
-      body,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to,
-    });
-
-    return { success: true, messageId: message.sid };
-  } catch (error) {
-    console.error('Failed to send SMS:', error);
-    return { success: false, error: error.message };
-  }
-}
-
-// ============================================
 // NOTIFICATION PREFERENCES
 // ============================================
 
@@ -122,7 +82,6 @@ async function getNotificationPreferences(userId) {
     return {
       user_id: userId,
       email_enabled: true,
-      sms_enabled: false,
       notify_on_call_complete: true,
       notify_on_message_taken: true,
       notify_on_escalation: true,
@@ -389,7 +348,7 @@ async function notifyCallEvent({
     console.error('💥 Query exception (notifyCallEvent get user):', queryError);
   }
 
-  const results = { email: null, sms: null };
+  const results = { email: null };
 
   // Send email notification
   if (prefs.email_enabled) {
@@ -414,52 +373,6 @@ async function notifyCallEvent({
     });
 
     results.email = emailResult;
-  }
-
-  // Send SMS notification
-  if (prefs.sms_enabled && prefs.sms_number) {
-    // Enforce business-hours-only (best-effort)
-    if (prefs.business_hours_only) {
-      const schedule = {
-        timezone: prefs.timezone || escalationSettings?.timezone || 'UTC',
-        businessDays: escalationSettings?.business_days || [1, 2, 3, 4, 5],
-        startTime: escalationSettings?.business_hours_start || '09:00',
-        endTime: escalationSettings?.business_hours_end || '18:00',
-      };
-
-      const within = isWithinBusinessHours(schedule);
-
-      // Special case: if the event is an escalation and user chose after-hours SMS alerts,
-      // allow SMS outside hours (this is the "after_hours_action=sms_alert" behavior).
-      const allowAfterHoursEscalationSms =
-        eventType === 'escalation' &&
-        escalationSettings?.business_hours_only === true &&
-        escalationSettings?.after_hours_action === 'sms_alert';
-
-      if (!within.isWithin && !allowAfterHoursEscalationSms) {
-        results.sms = { success: false, skipped: true, reason: `SMS blocked by business_hours_only (${within.reason || 'outside'})` };
-        return results;
-      }
-    }
-
-    const smsContent = formatSMSContent(eventType, callData);
-    const smsResult = await sendSMS({
-      to: prefs.sms_number,
-      body: smsContent,
-    });
-
-    await logNotification({
-      userId,
-      callId,
-      notificationType: 'sms',
-      eventType,
-      recipient: prefs.sms_number,
-      content: smsContent,
-      status: smsResult.success ? 'sent' : 'failed',
-      errorMessage: smsResult.error,
-    });
-
-    results.sms = smsResult;
   }
 
   return results;
@@ -537,25 +450,6 @@ function formatEmailContent(eventType, callData, user) {
   return templates[eventType] || templates.call_complete;
 }
 
-/**
- * Format SMS content for different event types
- */
-function formatSMSContent(eventType, callData) {
-  const callerNumber = callData.customerNumber || 'Unknown';
-  const summary = callData.summary || '';
-
-  // Keep SMS short (160 chars ideal)
-  const templates = {
-    call_complete: `Call from ${callerNumber}: ${summary.slice(0, 100)}`,
-    message_taken: `New msg from ${callerNumber}: ${summary.slice(0, 100)}`,
-    escalation: `🚨 Escalated call from ${callerNumber}. Check email for details.`,
-    voicemail: `Voicemail from ${callerNumber}: ${summary.slice(0, 100)}`,
-    missed_call: `Missed call from ${callerNumber}`,
-  };
-
-  return templates[eventType] || templates.call_complete;
-}
-
 // ============================================
 // TEST NOTIFICATIONS
 // ============================================
@@ -563,7 +457,7 @@ function formatSMSContent(eventType, callData) {
 /**
  * Send a test notification to verify configuration
  */
-async function sendTestNotification(userId, type = 'email') {
+async function sendTestNotification(userId) {
   const prefs = await getNotificationPreferences(userId);
   let user = null;
   try {
@@ -588,25 +482,13 @@ async function sendTestNotification(userId, type = 'email') {
     businessName: 'Test Business',
   };
 
-  if (type === 'email') {
-    const emailContent = formatEmailContent('call_complete', testData, user);
-    return sendEmail({
-      to: prefs.email_address || user?.email,
-      subject: `[TEST] ${emailContent.subject}`,
-      html: emailContent.html,
-      text: emailContent.text,
-    });
-  } else if (type === 'sms') {
-    if (!prefs.sms_number) {
-      return { success: false, error: 'No SMS number configured' };
-    }
-    return sendSMS({
-      to: prefs.sms_number,
-      body: '[TEST] ' + formatSMSContent('call_complete', testData),
-    });
-  }
-
-  return { success: false, error: 'Invalid notification type' };
+  const emailContent = formatEmailContent('call_complete', testData, user);
+  return sendEmail({
+    to: prefs.email_address || user?.email,
+    subject: `[TEST] ${emailContent.subject}`,
+    html: emailContent.html,
+    text: emailContent.text,
+  });
 }
 
 // ============================================
@@ -737,9 +619,8 @@ Required Actions:
 // ============================================
 
 module.exports = {
-  // Email/SMS sending
+  // Email sending
   sendEmail,
-  sendSMS,
 
   // Preferences
   getNotificationPreferences,
@@ -760,5 +641,4 @@ module.exports = {
 
   // Formatting (exported for testing)
   formatEmailContent,
-  formatSMSContent,
 };

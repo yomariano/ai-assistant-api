@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { supabase } = require('../services/supabase');
+const { blogContentGenerator, blogPublisher } = require('../services/blog');
+const { comparisonGenerator } = require('../services/seo');
+const { runBlogGenerationOnce, getJobStatus: getBlogJobStatus } = require('../jobs/blogGeneration');
 
 const SITEMAP_CHUNK_SIZE = 1000;
 const SITEMAP_MAX_ROWS_PER_TYPE = 50000;
@@ -446,12 +449,19 @@ router.get('/sitemap-data', async (req, res) => {
       ],
     });
 
+    const comparisons = await fetchAllPublishedForSitemap({
+      table: 'comparison_pages',
+      select: 'slug, updated_at',
+      orderBy: [{ column: 'slug', ascending: true }],
+    });
+
     res.json({
       blogPosts,
       useCases,
       locations,
       features,
       combos,
+      comparisons,
     });
   } catch (error) {
     console.error('Error fetching sitemap data:', error);
@@ -473,6 +483,293 @@ router.get('/redirects', async (req, res) => {
   } catch (error) {
     console.error('Error fetching redirects:', error);
     res.status(500).json({ error: { message: 'Failed to fetch redirects' } });
+  }
+});
+
+// ============================================
+// COMPARISON PAGES ENDPOINTS
+// ============================================
+
+// GET /api/content/comparisons - List all published comparison pages
+router.get('/comparisons', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('comparison_pages')
+      .select('id, slug, alternative_name, alternative_slug, title, description, hero_title, published_at, updated_at')
+      .eq('status', 'published')
+      .order('alternative_name', { ascending: true });
+
+    if (error) throw error;
+
+    res.json(data || []);
+  } catch (error) {
+    console.error('Error fetching comparison pages:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch comparison pages' } });
+  }
+});
+
+// GET /api/content/comparisons/:slug - Get single comparison page
+router.get('/comparisons/:slug', async (req, res) => {
+  try {
+    const { slug } = req.params;
+
+    const { data, error } = await supabase
+      .from('comparison_pages')
+      .select('*')
+      .eq('slug', slug)
+      .eq('status', 'published')
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ error: { message: 'Comparison page not found' } });
+      }
+      throw error;
+    }
+
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching comparison page:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch comparison page' } });
+  }
+});
+
+// ============================================
+// ADMIN: BLOG GENERATION ENDPOINTS
+// ============================================
+
+// Admin authentication middleware
+function requireAdminAuth(req, res, next) {
+  const adminSecret = process.env.ADMIN_SECRET;
+  const providedSecret = req.headers['x-admin-secret'];
+
+  if (adminSecret && providedSecret === adminSecret) {
+    return next();
+  }
+
+  // Check for admin user via session (if auth middleware has run)
+  if (req.user?.is_admin) {
+    return next();
+  }
+
+  res.status(401).json({ error: { message: 'Admin authentication required' } });
+}
+
+// GET /api/content/blog/topics - List all blog topic seeds (admin)
+router.get('/blog/topics', requireAdminAuth, async (req, res) => {
+  try {
+    const { category, isActive } = req.query;
+    const topics = await blogContentGenerator.getTopicSeeds({
+      category: category || null,
+      isActive: isActive === undefined ? true : isActive === 'true'
+    });
+    res.json(topics);
+  } catch (error) {
+    console.error('Error fetching blog topics:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch blog topics' } });
+  }
+});
+
+// GET /api/content/blog/generation-stats - Get blog generation statistics (admin)
+router.get('/blog/generation-stats', requireAdminAuth, async (req, res) => {
+  try {
+    const stats = await blogContentGenerator.getBlogGenerationStats();
+    const jobStatus = getBlogJobStatus();
+    const counts = await blogPublisher.getBlogCounts();
+
+    res.json({
+      generation: stats,
+      job: jobStatus,
+      posts: counts
+    });
+  } catch (error) {
+    console.error('Error fetching blog generation stats:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch blog generation stats' } });
+  }
+});
+
+// GET /api/content/blog/generation-logs - Get blog generation logs (admin)
+router.get('/blog/generation-logs', requireAdminAuth, async (req, res) => {
+  try {
+    const { limit = 50, status } = req.query;
+    const logs = await blogContentGenerator.getGenerationLogs({
+      limit: parseInt(limit),
+      status: status || null
+    });
+    res.json(logs);
+  } catch (error) {
+    console.error('Error fetching blog generation logs:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch blog generation logs' } });
+  }
+});
+
+// POST /api/content/blog/generate - Trigger blog post generation (admin)
+router.post('/blog/generate', requireAdminAuth, async (req, res) => {
+  try {
+    const { maxPosts = 1, topicSeedId, autoPublish = false } = req.body;
+
+    // If specific topic seed provided, generate from that
+    if (topicSeedId) {
+      const { data: topicSeed, error } = await supabase
+        .from('blog_topic_seeds')
+        .select('*')
+        .eq('id', topicSeedId)
+        .single();
+
+      if (error || !topicSeed) {
+        return res.status(404).json({ error: { message: 'Topic seed not found' } });
+      }
+
+      const content = await blogContentGenerator.generateBlogPost(topicSeed);
+      const post = await blogPublisher.publishBlogPost(content, {
+        topicSeedId: topicSeed.id,
+        status: autoPublish ? 'published' : 'draft'
+      });
+
+      return res.json({
+        success: true,
+        posts: [post]
+      });
+    }
+
+    // Otherwise run the regular generation job
+    const result = await runBlogGenerationOnce({ maxPosts: parseInt(maxPosts) });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error generating blog post:', error);
+    res.status(500).json({ error: { message: error.message || 'Failed to generate blog post' } });
+  }
+});
+
+// POST /api/content/blog/:id/publish - Publish a draft blog post (admin)
+router.post('/blog/:id/publish', requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const post = await blogPublisher.updateBlogPostStatus(id, 'published');
+    res.json(post);
+  } catch (error) {
+    console.error('Error publishing blog post:', error);
+    res.status(500).json({ error: { message: 'Failed to publish blog post' } });
+  }
+});
+
+// POST /api/content/blog/:id/unpublish - Unpublish a blog post (admin)
+router.post('/blog/:id/unpublish', requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const post = await blogPublisher.updateBlogPostStatus(id, 'draft');
+    res.json(post);
+  } catch (error) {
+    console.error('Error unpublishing blog post:', error);
+    res.status(500).json({ error: { message: 'Failed to unpublish blog post' } });
+  }
+});
+
+// GET /api/content/blog/drafts - Get all draft blog posts (admin)
+router.get('/blog/drafts', requireAdminAuth, async (req, res) => {
+  try {
+    const posts = await blogPublisher.getBlogPosts({ status: 'draft' });
+    res.json(posts);
+  } catch (error) {
+    console.error('Error fetching draft posts:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch draft posts' } });
+  }
+});
+
+// ============================================
+// ADMIN: COMPARISON GENERATION ENDPOINTS
+// ============================================
+
+// GET /api/content/comparisons/admin/all - Get all comparison pages including drafts (admin)
+router.get('/comparisons/admin/all', requireAdminAuth, async (req, res) => {
+  try {
+    const pages = await comparisonGenerator.getComparisonPages({ status: null });
+    res.json(pages);
+  } catch (error) {
+    console.error('Error fetching all comparison pages:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch comparison pages' } });
+  }
+});
+
+// GET /api/content/comparisons/admin/alternatives - Get all comparison alternatives (admin)
+router.get('/comparisons/admin/alternatives', requireAdminAuth, async (req, res) => {
+  try {
+    const alternatives = await comparisonGenerator.getAlternatives({ isActive: null });
+    res.json(alternatives);
+  } catch (error) {
+    console.error('Error fetching alternatives:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch alternatives' } });
+  }
+});
+
+// GET /api/content/comparisons/admin/stats - Get comparison generation stats (admin)
+router.get('/comparisons/admin/stats', requireAdminAuth, async (req, res) => {
+  try {
+    const stats = await comparisonGenerator.getComparisonStats();
+    res.json(stats);
+  } catch (error) {
+    console.error('Error fetching comparison stats:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch comparison stats' } });
+  }
+});
+
+// POST /api/content/comparisons/generate - Generate comparison page for alternative (admin)
+router.post('/comparisons/generate', requireAdminAuth, async (req, res) => {
+  try {
+    const { alternativeSlug, autoPublish = false } = req.body;
+
+    if (!alternativeSlug) {
+      return res.status(400).json({ error: { message: 'alternativeSlug is required' } });
+    }
+
+    // Get the alternative
+    const alternatives = await comparisonGenerator.getAlternatives({ isActive: null });
+    const alternative = alternatives.find(a => a.slug === alternativeSlug);
+
+    if (!alternative) {
+      return res.status(404).json({ error: { message: 'Alternative not found' } });
+    }
+
+    // Generate the comparison page
+    const content = await comparisonGenerator.generateComparisonPage(alternative);
+
+    // Publish the page
+    const page = await comparisonGenerator.publishComparisonPage(content, {
+      status: autoPublish ? 'published' : 'draft'
+    });
+
+    res.json({
+      success: true,
+      page
+    });
+  } catch (error) {
+    console.error('Error generating comparison page:', error);
+    res.status(500).json({ error: { message: error.message || 'Failed to generate comparison page' } });
+  }
+});
+
+// POST /api/content/comparisons/:id/publish - Publish a comparison page (admin)
+router.post('/comparisons/:id/publish', requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const page = await comparisonGenerator.updateComparisonPageStatus(id, 'published');
+    res.json(page);
+  } catch (error) {
+    console.error('Error publishing comparison page:', error);
+    res.status(500).json({ error: { message: 'Failed to publish comparison page' } });
+  }
+});
+
+// POST /api/content/comparisons/:id/unpublish - Unpublish a comparison page (admin)
+router.post('/comparisons/:id/unpublish', requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const page = await comparisonGenerator.updateComparisonPageStatus(id, 'draft');
+    res.json(page);
+  } catch (error) {
+    console.error('Error unpublishing comparison page:', error);
+    res.status(500).json({ error: { message: 'Failed to unpublish comparison page' } });
   }
 });
 

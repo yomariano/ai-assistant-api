@@ -65,7 +65,6 @@ async function upsertBookingConfig(userId, config) {
     deposit_amount_cents: config.depositAmountCents || 0,
     calendar_provider: config.calendarProvider || null,
     calendar_id: config.calendarId || null,
-    sms_confirmation: config.smsConfirmation !== false,
     email_confirmation: config.emailConfirmation || false,
     confirmation_template: config.confirmationTemplate || null,
     is_active: config.isActive !== false,

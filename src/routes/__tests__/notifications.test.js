@@ -67,7 +67,6 @@ describe('Notification Routes', () => {
     // Default mock responses
     mockNotificationService.getNotificationPreferences.mockResolvedValue({
       email_enabled: true,
-      sms_enabled: false,
       email_address: 'test@example.com',
       notify_on_call_complete: true,
       notify_on_message_taken: true,
@@ -125,16 +124,14 @@ describe('Notification Routes', () => {
     beforeEach(() => {
       mockNotificationService.updateNotificationPreferences.mockResolvedValue({
         email_enabled: true,
-        sms_enabled: true,
-        sms_number: '+353851234567',
+        email_address: 'test@example.com',
       });
     });
 
     it('should update notification preferences', async () => {
       const updates = {
         email_enabled: true,
-        sms_enabled: true,
-        sms_number: '+353851234567',
+        email_address: 'test@example.com',
       };
 
       const response = await request(app)
@@ -148,46 +145,6 @@ describe('Notification Routes', () => {
         'user-123',
         expect.objectContaining(updates)
       );
-    });
-
-    it('should reject invalid phone number', async () => {
-      const response = await request(app)
-        .put('/api/notifications/preferences')
-        .send({ sms_number: 'invalid' })
-        .expect(400);
-
-      expect(response.body.error.code).toBe('INVALID_PHONE_NUMBER');
-    });
-
-    it('should reject phone number without + prefix', async () => {
-      const response = await request(app)
-        .put('/api/notifications/preferences')
-        .send({ sms_number: '353851234567' })
-        .expect(400);
-
-      expect(response.body.error.code).toBe('INVALID_PHONE_NUMBER');
-    });
-
-    it('should reject phone number starting with 0', async () => {
-      const response = await request(app)
-        .put('/api/notifications/preferences')
-        .send({ sms_number: '+0851234567' })
-        .expect(400);
-
-      expect(response.body.error.code).toBe('INVALID_PHONE_NUMBER');
-    });
-
-    it('should accept valid E.164 phone numbers', async () => {
-      const validNumbers = ['+353851234567', '+14155551234', '+442071234567'];
-
-      for (const number of validNumbers) {
-        const response = await request(app)
-          .put('/api/notifications/preferences')
-          .send({ sms_number: number })
-          .expect(200);
-
-        expect(response.body.preferences).toBeDefined();
-      }
     });
 
     it('should reject invalid email', async () => {
@@ -324,7 +281,7 @@ describe('Notification Routes', () => {
     });
 
     it('should accept valid transfer methods', async () => {
-      const validMethods = ['blind_transfer', 'warm_transfer', 'callback', 'sms_alert'];
+      const validMethods = ['blind_transfer', 'warm_transfer', 'callback'];
 
       for (const method of validMethods) {
         const response = await request(app)
@@ -346,7 +303,7 @@ describe('Notification Routes', () => {
     });
 
     it('should accept valid after hours actions', async () => {
-      const validActions = ['voicemail', 'sms_alert', 'callback_promise', 'ai_only'];
+      const validActions = ['voicemail', 'callback_promise', 'ai_only'];
 
       for (const action of validActions) {
         const response = await request(app)
@@ -421,41 +378,12 @@ describe('Notification Routes', () => {
     it('should send test email', async () => {
       const response = await request(app)
         .post('/api/notifications/test')
-        .send({ type: 'email' })
+        .send({})
         .expect(200);
 
       expect(response.body.success).toBe(true);
       expect(response.body.message).toContain('email');
-      expect(mockNotificationService.sendTestNotification).toHaveBeenCalledWith('user-123', 'email');
-    });
-
-    it('should send test SMS', async () => {
-      const response = await request(app)
-        .post('/api/notifications/test')
-        .send({ type: 'sms' })
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.message).toContain('sms');
-      expect(mockNotificationService.sendTestNotification).toHaveBeenCalledWith('user-123', 'sms');
-    });
-
-    it('should reject invalid notification type', async () => {
-      const response = await request(app)
-        .post('/api/notifications/test')
-        .send({ type: 'invalid' })
-        .expect(400);
-
-      expect(response.body.error.code).toBe('INVALID_NOTIFICATION_TYPE');
-    });
-
-    it('should default to email if type not specified', async () => {
-      const response = await request(app)
-        .post('/api/notifications/test')
-        .send({})
-        .expect(200);
-
-      expect(mockNotificationService.sendTestNotification).toHaveBeenCalledWith('user-123', 'email');
+      expect(mockNotificationService.sendTestNotification).toHaveBeenCalledWith('user-123');
     });
 
     it('should handle test notification failure', async () => {
@@ -466,7 +394,7 @@ describe('Notification Routes', () => {
 
       const response = await request(app)
         .post('/api/notifications/test')
-        .send({ type: 'email' })
+        .send({})
         .expect(400);
 
       expect(response.body.success).toBe(false);
@@ -478,7 +406,7 @@ describe('Notification Routes', () => {
 
       const response = await request(app)
         .post('/api/notifications/test')
-        .send({ type: 'email' })
+        .send({})
         .expect(500);
 
       expect(response.body.error.code).toBe('TEST_NOTIFICATION_ERROR');

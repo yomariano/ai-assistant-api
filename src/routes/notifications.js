@@ -45,8 +45,6 @@ router.put('/preferences', async (req, res) => {
     const allowedFields = [
       'email_enabled',
       'email_address',
-      'sms_enabled',
-      'sms_number',
       'notify_on_call_complete',
       'notify_on_message_taken',
       'notify_on_escalation',
@@ -61,16 +59,6 @@ router.put('/preferences', async (req, res) => {
       if (req.body[field] !== undefined) {
         updates[field] = req.body[field];
       }
-    }
-
-    // Validate SMS number format if provided
-    if (updates.sms_number && !isValidPhoneNumber(updates.sms_number)) {
-      return res.status(400).json({
-        error: {
-          code: 'INVALID_PHONE_NUMBER',
-          message: 'Invalid phone number format. Use E.164 format (e.g., +353851234567)',
-        },
-      });
     }
 
     // Validate email format if provided
@@ -163,7 +151,7 @@ router.put('/escalation', async (req, res) => {
     }
 
     // Validate transfer method
-    const validMethods = ['blind_transfer', 'warm_transfer', 'callback', 'sms_alert'];
+    const validMethods = ['blind_transfer', 'warm_transfer', 'callback'];
     if (updates.transfer_method && !validMethods.includes(updates.transfer_method)) {
       return res.status(400).json({
         error: {
@@ -174,7 +162,7 @@ router.put('/escalation', async (req, res) => {
     }
 
     // Validate after hours action
-    const validActions = ['voicemail', 'sms_alert', 'callback_promise', 'ai_only'];
+    const validActions = ['voicemail', 'callback_promise', 'ai_only'];
     if (updates.after_hours_action && !validActions.includes(updates.after_hours_action)) {
       return res.status(400).json({
         error: {
@@ -225,27 +213,16 @@ router.put('/escalation', async (req, res) => {
 
 /**
  * POST /api/notifications/test
- * Send a test notification to verify configuration
+ * Send a test email notification to verify configuration
  */
 router.post('/test', async (req, res) => {
   try {
-    const { type = 'email' } = req.body;
-
-    if (!['email', 'sms'].includes(type)) {
-      return res.status(400).json({
-        error: {
-          code: 'INVALID_NOTIFICATION_TYPE',
-          message: 'Type must be "email" or "sms"',
-        },
-      });
-    }
-
-    const result = await notificationService.sendTestNotification(req.user.id, type);
+    const result = await notificationService.sendTestNotification(req.user.id);
 
     if (result.success) {
       res.json({
         success: true,
-        message: `Test ${type} sent successfully`,
+        message: 'Test email sent successfully',
         messageId: result.messageId,
       });
     } else {

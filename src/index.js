@@ -32,6 +32,7 @@ const { startProvisioningRetryJob } = require('./jobs/provisioningRetry');
 const { startNumberPoolMaintenanceJob } = require('./jobs/numberPoolMaintenance');
 const { startSeoContentGenerationJob } = require('./jobs/seoContentGeneration');
 const { startEmailTriggersJob } = require('./jobs/emailTriggers');
+const { startBlogGenerationJob } = require('./jobs/blogGeneration');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -129,4 +130,5 @@ app.listen(PORT, () => {
   startNumberPoolMaintenanceJob();
   startSeoContentGenerationJob();
   startEmailTriggersJob();
+  startBlogGenerationJob();
 });
