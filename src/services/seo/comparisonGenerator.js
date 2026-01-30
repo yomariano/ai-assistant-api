@@ -22,14 +22,25 @@ async function callClaudeAPI(prompt, model = 'haiku') {
 
     const startTime = Date.now();
 
-    const response = await fetch(`${CLAUDE_API_URL}/prompt`, {
+    // Use https agent to allow self-signed certificates
+    const https = require('https');
+    const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+
+    const fetchOptions = {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'X-API-Key': CLAUDE_API_KEY
         },
         body: JSON.stringify({ prompt, model })
-    });
+    };
+
+    // Add agent for https URLs
+    if (CLAUDE_API_URL.startsWith('https')) {
+        fetchOptions.agent = httpsAgent;
+    }
+
+    const response = await fetch(`${CLAUDE_API_URL}/v1/claude`, fetchOptions);
 
     if (!response.ok) {
         const errorText = await response.text();
