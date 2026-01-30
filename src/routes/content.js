@@ -99,6 +99,118 @@ router.get('/blog/related', async (req, res) => {
   }
 });
 
+// Admin authentication middleware (defined early for use in routes below)
+function requireAdminAuth(req, res, next) {
+  const adminSecret = process.env.ADMIN_SECRET;
+  const providedSecret = req.headers['x-admin-secret'];
+
+  if (adminSecret && providedSecret === adminSecret) {
+    return next();
+  }
+
+  if (req.user?.is_admin) {
+    return next();
+  }
+
+  res.status(401).json({ error: { message: 'Admin authentication required' } });
+}
+
+// GET /api/content/blog/topics - List all blog topic seeds (admin)
+// NOTE: Admin routes must be defined BEFORE /blog/:slug to avoid being caught as a slug
+router.get('/blog/topics', requireAdminAuth, async (req, res) => {
+  try {
+    const { category, isActive } = req.query;
+    const topics = await blogContentGenerator.getTopicSeeds({
+      category: category || null,
+      isActive: isActive === undefined ? true : isActive === 'true'
+    });
+    res.json(topics);
+  } catch (error) {
+    console.error('Error fetching blog topics:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch blog topics' } });
+  }
+});
+
+// GET /api/content/blog/generation-stats - Get blog generation statistics (admin)
+router.get('/blog/generation-stats', requireAdminAuth, async (req, res) => {
+  try {
+    const stats = await blogContentGenerator.getBlogGenerationStats();
+    const jobStatus = getBlogJobStatus();
+    const counts = await blogPublisher.getBlogCounts();
+
+    res.json({
+      generation: stats,
+      job: jobStatus,
+      posts: counts
+    });
+  } catch (error) {
+    console.error('Error fetching blog generation stats:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch blog generation stats' } });
+  }
+});
+
+// GET /api/content/blog/generation-logs - Get blog generation logs (admin)
+router.get('/blog/generation-logs', requireAdminAuth, async (req, res) => {
+  try {
+    const { limit = 50, status } = req.query;
+    const logs = await blogContentGenerator.getGenerationLogs({
+      limit: parseInt(limit),
+      status: status || null
+    });
+    res.json(logs);
+  } catch (error) {
+    console.error('Error fetching blog generation logs:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch blog generation logs' } });
+  }
+});
+
+// GET /api/content/blog/drafts - Get all draft blog posts (admin)
+router.get('/blog/drafts', requireAdminAuth, async (req, res) => {
+  try {
+    const posts = await blogPublisher.getBlogPosts({ status: 'draft' });
+    res.json(posts);
+  } catch (error) {
+    console.error('Error fetching draft posts:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch draft posts' } });
+  }
+});
+
+// POST /api/content/blog/generate - Trigger blog post generation (admin)
+router.post('/blog/generate', requireAdminAuth, async (req, res) => {
+  try {
+    const { maxPosts = 1, topicSeedId, autoPublish = false } = req.body;
+
+    if (topicSeedId) {
+      const { data: topicSeed, error } = await supabase
+        .from('blog_topic_seeds')
+        .select('*')
+        .eq('id', topicSeedId)
+        .single();
+
+      if (error || !topicSeed) {
+        return res.status(404).json({ error: { message: 'Topic seed not found' } });
+      }
+
+      const content = await blogContentGenerator.generateBlogPost(topicSeed);
+      const post = await blogPublisher.publishBlogPost(content, {
+        topicSeedId: topicSeed.id,
+        status: autoPublish ? 'published' : 'draft'
+      });
+
+      return res.json({
+        success: true,
+        posts: [post]
+      });
+    }
+
+    const result = await runBlogGenerationOnce({ maxPosts: parseInt(maxPosts) });
+    res.json(result);
+  } catch (error) {
+    console.error('Error generating blog post:', error);
+    res.status(500).json({ error: { message: error.message || 'Failed to generate blog post' } });
+  }
+});
+
 // GET /api/content/blog/:slug - Get single blog post
 router.get('/blog/:slug', async (req, res) => {
   try {
@@ -508,178 +620,7 @@ router.get('/comparisons', async (req, res) => {
   }
 });
 
-// GET /api/content/comparisons/:slug - Get single comparison page
-router.get('/comparisons/:slug', async (req, res) => {
-  try {
-    const { slug } = req.params;
-
-    const { data, error } = await supabase
-      .from('comparison_pages')
-      .select('*')
-      .eq('slug', slug)
-      .eq('status', 'published')
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return res.status(404).json({ error: { message: 'Comparison page not found' } });
-      }
-      throw error;
-    }
-
-    res.json(data);
-  } catch (error) {
-    console.error('Error fetching comparison page:', error);
-    res.status(500).json({ error: { message: 'Failed to fetch comparison page' } });
-  }
-});
-
-// ============================================
-// ADMIN: BLOG GENERATION ENDPOINTS
-// ============================================
-
-// Admin authentication middleware
-function requireAdminAuth(req, res, next) {
-  const adminSecret = process.env.ADMIN_SECRET;
-  const providedSecret = req.headers['x-admin-secret'];
-
-  if (adminSecret && providedSecret === adminSecret) {
-    return next();
-  }
-
-  // Check for admin user via session (if auth middleware has run)
-  if (req.user?.is_admin) {
-    return next();
-  }
-
-  res.status(401).json({ error: { message: 'Admin authentication required' } });
-}
-
-// GET /api/content/blog/topics - List all blog topic seeds (admin)
-router.get('/blog/topics', requireAdminAuth, async (req, res) => {
-  try {
-    const { category, isActive } = req.query;
-    const topics = await blogContentGenerator.getTopicSeeds({
-      category: category || null,
-      isActive: isActive === undefined ? true : isActive === 'true'
-    });
-    res.json(topics);
-  } catch (error) {
-    console.error('Error fetching blog topics:', error);
-    res.status(500).json({ error: { message: 'Failed to fetch blog topics' } });
-  }
-});
-
-// GET /api/content/blog/generation-stats - Get blog generation statistics (admin)
-router.get('/blog/generation-stats', requireAdminAuth, async (req, res) => {
-  try {
-    const stats = await blogContentGenerator.getBlogGenerationStats();
-    const jobStatus = getBlogJobStatus();
-    const counts = await blogPublisher.getBlogCounts();
-
-    res.json({
-      generation: stats,
-      job: jobStatus,
-      posts: counts
-    });
-  } catch (error) {
-    console.error('Error fetching blog generation stats:', error);
-    res.status(500).json({ error: { message: 'Failed to fetch blog generation stats' } });
-  }
-});
-
-// GET /api/content/blog/generation-logs - Get blog generation logs (admin)
-router.get('/blog/generation-logs', requireAdminAuth, async (req, res) => {
-  try {
-    const { limit = 50, status } = req.query;
-    const logs = await blogContentGenerator.getGenerationLogs({
-      limit: parseInt(limit),
-      status: status || null
-    });
-    res.json(logs);
-  } catch (error) {
-    console.error('Error fetching blog generation logs:', error);
-    res.status(500).json({ error: { message: 'Failed to fetch blog generation logs' } });
-  }
-});
-
-// POST /api/content/blog/generate - Trigger blog post generation (admin)
-router.post('/blog/generate', requireAdminAuth, async (req, res) => {
-  try {
-    const { maxPosts = 1, topicSeedId, autoPublish = false } = req.body;
-
-    // If specific topic seed provided, generate from that
-    if (topicSeedId) {
-      const { data: topicSeed, error } = await supabase
-        .from('blog_topic_seeds')
-        .select('*')
-        .eq('id', topicSeedId)
-        .single();
-
-      if (error || !topicSeed) {
-        return res.status(404).json({ error: { message: 'Topic seed not found' } });
-      }
-
-      const content = await blogContentGenerator.generateBlogPost(topicSeed);
-      const post = await blogPublisher.publishBlogPost(content, {
-        topicSeedId: topicSeed.id,
-        status: autoPublish ? 'published' : 'draft'
-      });
-
-      return res.json({
-        success: true,
-        posts: [post]
-      });
-    }
-
-    // Otherwise run the regular generation job
-    const result = await runBlogGenerationOnce({ maxPosts: parseInt(maxPosts) });
-
-    res.json(result);
-  } catch (error) {
-    console.error('Error generating blog post:', error);
-    res.status(500).json({ error: { message: error.message || 'Failed to generate blog post' } });
-  }
-});
-
-// POST /api/content/blog/:id/publish - Publish a draft blog post (admin)
-router.post('/blog/:id/publish', requireAdminAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const post = await blogPublisher.updateBlogPostStatus(id, 'published');
-    res.json(post);
-  } catch (error) {
-    console.error('Error publishing blog post:', error);
-    res.status(500).json({ error: { message: 'Failed to publish blog post' } });
-  }
-});
-
-// POST /api/content/blog/:id/unpublish - Unpublish a blog post (admin)
-router.post('/blog/:id/unpublish', requireAdminAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const post = await blogPublisher.updateBlogPostStatus(id, 'draft');
-    res.json(post);
-  } catch (error) {
-    console.error('Error unpublishing blog post:', error);
-    res.status(500).json({ error: { message: 'Failed to unpublish blog post' } });
-  }
-});
-
-// GET /api/content/blog/drafts - Get all draft blog posts (admin)
-router.get('/blog/drafts', requireAdminAuth, async (req, res) => {
-  try {
-    const posts = await blogPublisher.getBlogPosts({ status: 'draft' });
-    res.json(posts);
-  } catch (error) {
-    console.error('Error fetching draft posts:', error);
-    res.status(500).json({ error: { message: 'Failed to fetch draft posts' } });
-  }
-});
-
-// ============================================
-// ADMIN: COMPARISON GENERATION ENDPOINTS
-// ============================================
+// NOTE: Admin comparison routes must be defined BEFORE /comparisons/:slug to avoid being caught as a slug
 
 // GET /api/content/comparisons/admin/all - Get all comparison pages including drafts (admin)
 router.get('/comparisons/admin/all', requireAdminAuth, async (req, res) => {
@@ -746,6 +687,56 @@ router.post('/comparisons/generate', requireAdminAuth, async (req, res) => {
   } catch (error) {
     console.error('Error generating comparison page:', error);
     res.status(500).json({ error: { message: error.message || 'Failed to generate comparison page' } });
+  }
+});
+
+// GET /api/content/comparisons/:slug - Get single comparison page
+router.get('/comparisons/:slug', async (req, res) => {
+  try {
+    const { slug } = req.params;
+
+    const { data, error } = await supabase
+      .from('comparison_pages')
+      .select('*')
+      .eq('slug', slug)
+      .eq('status', 'published')
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ error: { message: 'Comparison page not found' } });
+      }
+      throw error;
+    }
+
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching comparison page:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch comparison page' } });
+  }
+});
+
+// POST /api/content/blog/:id/publish - Publish a draft blog post (admin)
+router.post('/blog/:id/publish', requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const post = await blogPublisher.updateBlogPostStatus(id, 'published');
+    res.json(post);
+  } catch (error) {
+    console.error('Error publishing blog post:', error);
+    res.status(500).json({ error: { message: 'Failed to publish blog post' } });
+  }
+});
+
+// POST /api/content/blog/:id/unpublish - Unpublish a blog post (admin)
+router.post('/blog/:id/unpublish', requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const post = await blogPublisher.updateBlogPostStatus(id, 'draft');
+    res.json(post);
+  } catch (error) {
+    console.error('Error unpublishing blog post:', error);
+    res.status(500).json({ error: { message: 'Failed to unpublish blog post' } });
   }
 });
 
