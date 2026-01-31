@@ -5,9 +5,14 @@
 
 const { supabaseAdmin } = require('../supabase');
 const comparisonTemplates = require('./comparisonTemplates');
+const axios = require('axios');
+const https = require('https');
 
 const CLAUDE_API_URL = process.env.CLAUDE_API_URL || 'http://91.98.76.231:8787';
 const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
+
+// Create https agent for self-signed certificates
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 /**
  * Call the Claude proxy API
@@ -22,36 +27,23 @@ async function callClaudeAPI(prompt, model = 'haiku') {
 
     const startTime = Date.now();
 
-    // Use https agent to allow self-signed certificates
-    const https = require('https');
-    const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+    const response = await axios.post(
+        `${CLAUDE_API_URL}/v1/claude`,
+        { prompt, model },
+        {
+            headers: {
+                'Content-Type': 'application/json',
+                'X-API-Key': CLAUDE_API_KEY
+            },
+            httpsAgent: CLAUDE_API_URL.startsWith('https') ? httpsAgent : undefined,
+            timeout: 120000
+        }
+    );
 
-    const fetchOptions = {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-API-Key': CLAUDE_API_KEY
-        },
-        body: JSON.stringify({ prompt, model })
-    };
-
-    // Add agent for https URLs
-    if (CLAUDE_API_URL.startsWith('https')) {
-        fetchOptions.agent = httpsAgent;
-    }
-
-    const response = await fetch(`${CLAUDE_API_URL}/v1/claude`, fetchOptions);
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Claude API error (${response.status}): ${errorText}`);
-    }
-
-    const result = await response.json();
     const generationTime = Date.now() - startTime;
 
     return {
-        content: result.result || result.response || result.content || result,
+        content: response.data.result || response.data.response || response.data.content || response.data,
         generationTime,
         promptLength: prompt.length
     };
